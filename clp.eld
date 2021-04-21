@@ -1,0 +1,3 @@
+[elm-plugin]
+name=clp
+
