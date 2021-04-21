@@ -5,11 +5,11 @@
 /CMakeCache.txt
 /Makefile
 /cmake_install.cmake
-/icat.so
+/clp.so
 /install_manifest.txt
 /autodoc
 /Doxyerror.log
-/otawa-icat.kdev4
+/otawa-clp.kdev4
 /.kdev4/
 /otawa-icat.tag
 /test/arm-so.tar.gz
