@@ -5,7 +5,12 @@ set(PLUGIN		"clp")
 set(NAMESPACE	"otawa")
 set(FILES		)
 set(SOURCES
-	"clp.cpp")
+	"clp.cpp"
+	"clp_Value.cpp"
+	"clp_State.cpp"
+	"clp_Analysis.cpp"
+	"clp_Domain.cpp")
+#"clp_SymbExpr.cpp")
 
 
 # C++ flags
@@ -41,19 +46,24 @@ execute_process(COMMAND "${OTAWA_CONFIG}" --plugdir
 	OUTPUT_VARIABLE OTAWA_PLUGDIR	OUTPUT_STRIP_TRAILING_WHITESPACE)
 execute_process(COMMAND "${OTAWA_CONFIG}" --make-plug "${PLUGIN}" --cflags
 	OUTPUT_VARIABLE OTAWA_CFLAGS 	OUTPUT_STRIP_TRAILING_WHITESPACE)
-execute_process(COMMAND "${OTAWA_CONFIG}" --make-plug "${PLUGIN}" --libs -r
+execute_process(COMMAND "${OTAWA_CONFIG}" --make-plug "${PLUGIN}.eld" --libs -r
 	OUTPUT_VARIABLE OTAWA_LDFLAGS 	OUTPUT_STRIP_TRAILING_WHITESPACE)
 
 
 # plugin definition
 include_directories		("${CMAKE_SOURCE_DIR}")
-add_library				("${PLUGIN}" MODULE ${SOURCES})
+add_library				("${PLUGIN}" SHARED ${SOURCES})
 set_property			(TARGET "${PLUGIN}" PROPERTY PREFIX "")
 set_property			(TARGET "${PLUGIN}" PROPERTY COMPILE_FLAGS "${OTAWA_CFLAGS}")
 target_link_libraries	("${PLUGIN}" "${TARGET_LIB}" "${OTAWA_LDFLAGS}")
 
 
+# tests
+if(WITH_TEST)
+add_subdirectory(test)
+endif()
+
 # installation
 install(TARGETS	"${PLUGIN}"		LIBRARY DESTINATION "${OTAWA_PLUGDIR}/${NAMESPACE}")
-install(FILES	"${PLUGIN}.eld"	DESTINATION 		"${OTAWA_PLUGDIR}/${NAMESPACE}")
+install(FILES	"${PLUGIN}.eld"			DESTINATION "${OTAWA_PLUGDIR}/${NAMESPACE}")
 

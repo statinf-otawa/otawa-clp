@@ -1,3 +1,2 @@
 [elm-plugin]
-name=clp
-
+name=otawa/clp
