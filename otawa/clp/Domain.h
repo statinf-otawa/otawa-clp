@@ -35,6 +35,12 @@ class ContextStack;
 class Domain: public ai::Domain {
 public:
 
+	typedef enum {
+		BOTH,
+		NOT_TAKEN, 
+		TAKEN
+	} branch_t;
+
 	Domain(Process *proc);
 	~Domain();
 
@@ -68,14 +74,11 @@ public:
 		_nb_load, _nb_top_load,
 		_nb_load_top_addr, _nb_filters,
 		_nb_top_filters;
-		
-private:
+
+	State *update(const BaseBundle<BasicBlock::InstIter>& b, State *s, branch_t select = BOTH);
+	State *update(Inst *inst, int sem, State *s, branch_t select = BOTH);
 	
-	typedef enum {
-		BOTH,
-		NOT_TAKEN, 
-		TAKEN
-	} branch_t;
+private:
 	
 	void set(clp::State& state, int i, const clp::Value& v);
 	void update(branch_t select);

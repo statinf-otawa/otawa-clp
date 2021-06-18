@@ -581,4 +581,40 @@ ai::State *Domain::update(Block *v, ai::State *_s) {
 	return cs;
 }
 
+/**
+ * Get the state after the execution of the given bundle.
+ * @param bu			Bundle to execute.
+ * @param s			Input state.
+ * @param select	Selection of issue (taken, not taken, both).
+ * @return			Output state (possibly input state updated).
+ */
+State *Domain::update(const BaseBundle<BasicBlock::InstIter>& bu, State *s, branch_t select) {
+	cs = s;
+	b.clear();
+	bu.semInsts(b);
+	currentInst = bu.first();
+	update(BOTH);
+	return cs;
+}
+
+/**
+ * Build the state before the execution of sem semantic instruction inside
+ * the given machine instruction.
+ * @param inst		Current machine instruction.
+ * @param sem		Targetted semantic instruction.
+ * @param s			Input state (possibly modified).
+ * @param select	Branch selection.
+ * @return			State just before the semantic instruction.
+ */
+State *Domain::update(Inst *inst, int sem, State *s, branch_t select) {
+	cs = s;
+	b.clear();
+	inst->semInsts(b);
+	currentInst = inst;
+	b[sem] = sem::cont();
+	b.setLength(sem + 1);
+	update(BOTH);
+	return cs;	
+}
+
 }} 	// otawa::clp

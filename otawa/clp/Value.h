@@ -55,6 +55,8 @@ public:
 		: _kind(kind), _base(lower), _delta(delta), _mtimes(mtimes) { check(); }	
 	inline Value(const int val):
 		_kind(VAL), _base(val), _delta(0), _mtimes(0) {}
+	inline static Value R(int n) { return Value(REG, n); }
+	inline static Value addr(uintn_t base, intn_t delta = 0, uintn_t mtimes = 0) { return Value(VAL, base, delta, mtimes); }
 
 	// accessors
 	inline kind_t kind(void) const { return _kind; }

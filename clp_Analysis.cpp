@@ -25,6 +25,7 @@
 #include <otawa/cfg/features.h>
 #include <otawa/dfa/State.h>
 #include <otawa/hard/Memory.h>
+#include <otawa/hard/Register.h>
 #include <otawa/ipet/features.h>
 #include <otawa/ai/CFGAnalyzer.h>
 #include <otawa/ai/FlowAwareRanking.h>
@@ -121,25 +122,60 @@ public:
 
 	///
 	ObservedState *at(BasicBlock *bb, Inst *inst, int sem, ObservedState *s) override {
-		// TODO
-		return nullptr;
+		
+		// if required, create the state
+		if(s == nullptr) {
+			s = new ObservedState();
+			ostates.add(s);
+		}
+		
+		// get the block state
+		if(bb != s->bb) {
+			s->istate = new State(*static_cast<State *>(ana->before(bb)));
+			s->inst = nullptr;
+		}
+		if(!bb->isBasic())
+			return s;
+		
+		// get the instruction state
+		auto i = bb->toBasic()->bundles().begin();
+		if(s->inst != nullptr && s->inst->address() < inst->address())
+			while(!(*i).area().contains(s->inst->address()))
+				i++;
+		s->inst = inst;
+		while(!(*i).area().contains(s->inst->address())) {
+			s->istate = domain->update(*i, s->istate);
+			i++;
+		}
+		
+		// go to the semantic instruction
+		if(sem == 0)
+			s->state = s->istate;
+		else {
+			s->state = new State(*s->istate);
+			s->state = domain->update(s->inst, sem, s->state);
+		}
+		
+		// get the semantic instruction state
+		return s;
 	}
 
 	///
 	void release(ObservedState *s) override {
-		// TODO
+		ostates.remove(s);
+		delete s;
 	}
 	
 	const Value& valueOf(ObservedState *state, int reg) override {
-		// TODO
+		return state->state->get(Value::R(reg));
 	}
 
 	const Value& valueOf(ObservedState *state, hard::Register *reg) override {
-		// TODO
+		return state->state->get(Value::R(reg->platformNumber()));
 	}
 	
 	const Value& valueOf(ObservedState *state, const Value& addr) override {
-		// TODO
+		return state->state->get(addr);
 	}
 
 protected:
@@ -241,61 +277,7 @@ protected:
 		// perform the analysis
 		ana->process();
 		
-#	if 0
-
-	// perform analysius
-#	ifdef CHECK_PARTIAL_ORDER
-		ClpListener list(ws, prob, true);
-		prob.list = &list;
-#	else
-		ClpListener list(ws, prob);
-#	endif
-	ClpFP fp(list);
-	ClpAI cai(fp, *ws);
-	cai.solve(cfg);
-
-	// the states actually stored in the listener!
-	for(CFGCollection::Iter cfg(coll); cfg(); cfg++) {
-		if(logFor(LOG_BB))
-			log << "\tCFG " << *cfg << io::endl;
-		for(CFG::BlockIter bb = cfg->blocks(); bb(); bb++) {
-			STATE_IN(*bb) = *(list.results[cfg->index()][bb->index()]);
-			if(logFor(LOG_BB)) {
-				log << "\t\t" << *bb << io::endl;
-				log << "\t\t\tS = ";
-				list.results[cfg->index()][bb->index()]->print(log, ws->process()->platform());
-				log << io::endl;
-			}
-		}
 	}
-
-	// process stats
-	_nb_inst = prob.get_nb_inst();
-	_nb_sem_inst = prob.get_nb_sem_inst();
-	_nb_set = prob.get_nb_set();
-	_nb_top_set = prob.get_nb_top_set();
-	_nb_store = prob.get_nb_store();
-	_nb_top_store = prob.get_nb_top_store();
-	_nb_top_store_addr = prob.get_nb_top_store_addr();
-	_nb_load = prob.get_nb_load();
-	_nb_load_top_addr = prob.get_nb_load_top_addr();
-	_nb_filters = prob.get_nb_filters();
-	_nb_top_filters = prob.get_nb_top_filters();
-	_nb_top_load = prob.get_nb_top_load();
-
-	//clockWorkSpace = clock() - clockWorkSpace;
-	//if(verbose)
-	//	elm::cerr << "CLP Analyse takes " << clockWorkSpace << " micro-seconds for processing " << prob.get_nb_clp_bb_count() << " blocks" << io::endl;
-
-//	watchWorkSpace.stop();
-//	otawa::ot::time t = watchWorkSpace.delay();
-//	elm::cerr << "CLP Analysew takes " << t << " micro-seconds" << io::endl;
-#	endif		
-	}
-	
-#if 0
-	Vector<init_t> inits;
-#endif
 	
 private:
 	const hard::Memory *mem;
@@ -303,6 +285,7 @@ private:
 	Domain *domain;
 	ai::CFGAnalyzer *ana;
 	bool trace;
+	List<ObservedState *> ostates;
 };
 
 ///

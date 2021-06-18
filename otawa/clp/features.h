@@ -23,10 +23,10 @@
 
 #include <otawa/proc.h>
 #include <otawa/clp/Value.h>
+#include <otawa/cfg/features.h>
 
 namespace otawa {
 
-class BasicBlock;
 class Inst;
 namespace hard { class Register; };
 	
@@ -38,18 +38,18 @@ class Problem;
 class State;
 
 class ObservedState {
-	friend class Manager;
+	friend class Analysis;
 private:
-	State *state;
+	inline ObservedState(): state(nullptr), istate(nullptr), bb(nullptr), inst(nullptr) {}
+	State *state, *istate;
 	BasicBlock *bb;
 	Inst *inst;
-	int sem;
 };
 
 class Manager {
 public:
 	virtual ~Manager();
-	virtual ObservedState *at(BasicBlock *bb, Inst *inst = nullptr, int sem = -1, ObservedState *s = nullptr) = 0;
+	virtual ObservedState *at(BasicBlock *bb, Inst *inst = nullptr, int sem = 0, ObservedState *s = nullptr) = 0;
 	virtual void release(ObservedState *s) = 0;
 	virtual const Value& valueOf(ObservedState *state, int reg) = 0;
 	virtual const Value& valueOf(ObservedState *state, hard::Register *reg) = 0;
