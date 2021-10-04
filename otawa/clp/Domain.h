@@ -66,17 +66,10 @@ public:
 	bool implementsTracing() override;
 	void printTrace(ai::State *s, io::StructuredOutput& out) override;
 	
-	clp::STAT_UINT
-		_nb_inst, _nb_sem_inst,
-		_nb_set, _nb_top_set,
-		_nb_store, _nb_top_store,
-		_nb_top_store_addr,
-		_nb_load, _nb_top_load,
-		_nb_load_top_addr, _nb_filters,
-		_nb_top_filters;
-
 	State *update(const BaseBundle<BasicBlock::InstIter>& b, State *s, branch_t select = BOTH);
 	State *update(Inst *inst, int sem, State *s, branch_t select = BOTH);
+
+	const Vector<Inst *> topStores() const { return store_to_T; }
 	
 private:
 	
@@ -84,13 +77,9 @@ private:
 	void update(branch_t select);
 	void doLoad(State& s, const sem::inst& i);
 	void doStore(State& s, const sem::inst& i);
-	//void collectInfo(State& s, Vector<FlowFactStateInfo>& ffs);
 	
 	sem::Block b;
-	bool has_if;
-	bool has_branch;
-	Block *bb; // use for tracking, nothing to do with the analysis itself
-	Inst *currentInst; // use for tracking, nothing to do with the analysis itself
+	Inst *currentInst;
 
 	/* attribute for specific analysis / packing */
 	bool bBuildFilters; // currently only set to true when building filters
@@ -100,6 +89,7 @@ private:
 	State *cs, *fs, *init;
 	ContextStack *stack;
 	avl::Map<Block *, State *> loop_states;
+	Vector<Inst *> store_to_T;
 };
 
 } } 	// otawa::clp

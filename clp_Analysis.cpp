@@ -277,6 +277,15 @@ protected:
 		// perform the analysis
 		ana->process();
 		
+		// display store-to-T
+		auto& stt = domain->topStores();
+		if(!stt.isEmpty()) {
+			StringBuffer buf;
+			buf << "results could be very imprecise because one or several store to T address has been found:\n";
+			for(auto i: stt)
+				buf << "\t- " << i->address() << " " << i << io::endl;
+			warn(buf.toString());
+		}
 	}
 	
 private:

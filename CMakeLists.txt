@@ -9,8 +9,9 @@ set(SOURCES
 	"clp_Value.cpp"
 	"clp_State.cpp"
 	"clp_Analysis.cpp"
-	"clp_Domain.cpp")
-#"clp_SymbExpr.cpp")
+	"clp_Domain.cpp"
+	"sem_predicates.cpp"
+	"sem_BackwardPredicateBuilder.cpp")
 
 
 # C++ flags

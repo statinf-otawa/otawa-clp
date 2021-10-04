@@ -80,21 +80,6 @@ inline const void set(clp::State& state, int i, const Value& v) {
 
 ///
 Domain::Domain(Process *proc):
-	_nb_inst(0),
-	_nb_sem_inst(0),
-	_nb_set(0),
-	_nb_top_set(0),
-	_nb_store(0),
-	_nb_top_store(0),
-	_nb_top_store_addr(0),
-	_nb_load(0),
-	_nb_top_load(0),
-	_nb_load_top_addr(0),
-	_nb_filters(0),
-	_nb_top_filters(0),
-	has_if(false),
-	has_branch(false),
-	bb(0),
 	currentInst(0),
 	bBuildFilters(false),
 	_process(proc),
@@ -343,7 +328,8 @@ void Domain::doStore(State& state, const sem::inst& i) {
 			state.set(Value(VAL, accessRange.fst.offset(), 1, accessRange.snd.offset() -accessRange.fst.offset()), get(state, i.d()));
 		else {
 			state.set(addrclp, get(state, i.d()));
-			// TODO straight store to T alarm
+			if(!store_to_T.contains(currentInst))
+				store_to_T.add(currentInst);
 		}
 	}
 
@@ -528,8 +514,6 @@ void Domain::update(branch_t select) {
 
 ///
 ai::State *Domain::update(Edge *e, ai::State *_s) {
-	// TODO build the filters
-	// TODO apply the filter
 	return _s;
 }
 
@@ -551,18 +535,14 @@ ai::State *Domain::update(Block *v, ai::State *_s) {
 			loop_states.put(bb, ps);
 		}
 		else {
-			// TODO improve if loop bound is available
-			CLP_CHECK(State *ops = new State(*ps));		// DEBUG
+			CLP_CHECK(State *ops = new State(*ps));
 			OTAWA_CLP_CHECK(ps->unlock();)
 			ps->widening(*cs, MAX_ITERATION(v));
 			OTAWA_CLP_CHECK(ps->lock();)
-			/*cerr << "DEBUG: before : "; print(ops, cerr); cerr << io::endl;
-			cerr << "DEBUG: after  : "; print(cs, cerr); cerr << io::endl;
-			cerr << "DEBUG: widened: "; print(ps, cerr); cerr << io::endl;*/
 			CLP_CHECK(
-				ASSERT(cs->subsetOf(*ps));			// DEBUG
-				ASSERT(ops->subsetOf(*ps));			// DEBUG
-				delete ops;							// DEBUG
+				ASSERT(cs->subsetOf(*ps));
+				ASSERT(ops->subsetOf(*ps));
+				delete ops;
 			)
 			cs->copy(*ps);
 		}
