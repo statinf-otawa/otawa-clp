@@ -344,7 +344,7 @@ Expression *Expression::op(sem::opcode op, Expression *a1, Expression *a2)
  * Substitute the register access r by the expression e.
  * @param r		Register to substitute.
  * @param e		Expression to substitute with.
- * @return		Expression afgter substitution.
+ * @return		Expression after substitution.
  */
 
 /**
