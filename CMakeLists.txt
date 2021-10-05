@@ -5,13 +5,15 @@ set(PLUGIN		"clp")
 set(NAMESPACE	"otawa")
 set(FILES		)
 set(SOURCES
-	"clp.cpp"
-	"clp_Value.cpp"
-	"clp_State.cpp"
-	"clp_Analysis.cpp"
-	"clp_Domain.cpp"
-	"sem_predicates.cpp"
-	"sem_BackwardPredicateBuilder.cpp")
+		"clp.cpp"
+		"clp_Value.cpp"
+		"clp_State.cpp"
+		"clp_Analysis.cpp"
+		"clp_Domain.cpp"
+		"sem_predicates.cpp"
+		"sem_BackwardPredicateBuilder.cpp"
+		"OwnershipPtr.h"
+		)
 
 
 # C++ flags
