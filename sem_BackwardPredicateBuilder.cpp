@@ -31,22 +31,29 @@ using namespace sem;
 
 class ExpressionComparator {
 public:
-	int doCompare(Expression *e1, Expression *e2) const { return e1->compare(e2); }
-	static int compare(Expression *e1, Expression *e2) { return e1->compare(e2); }
+	int doCompare(const Expression * e1, const Expression * e2) const { return e1->compare(e2); }
+	static int compare(const Expression * e1, const Expression * e2) { return e1->compare(e2); }
 };
 
 class State {
 public:
 	
 	State(): br(false) {}
+    ~State(){
+        for (auto x:regs)
+            delete &(*x);
+        for (auto x:mem)
+            delete &(*x);
+        // TODO i did not free the keys of mem, they are not freed
+    };
 
 	State *copy() const {
 		auto s = new State();
-		for(auto r: regs.pairs())
+		for(const auto& r: regs.pairs())
 			s->regs.put(r.fst, r.snd);
-		for(auto m: mem.pairs())
-			s->mem.put(m.fst->copy(), m.snd->copy());
-		for(auto c: sr.pairs())
+		for(const auto& m: mem.pairs())
+			s->mem.put(m.fst, m.snd);
+		for(const auto& c: sr.pairs())
 			s->sr.put(c.fst, c.snd);
 		for(auto p: preds)
 			s->preds.add(p->copy());
@@ -64,13 +71,13 @@ public:
 			break;
 		case SET:
 			replace(i.d(), Expression::reg(i.a()));
-			extend(i.d(), i.a(), [](int r, cond_t c, Expression *e)
-				{ return Predicate::reg(r, c, e->copy()); });
+			extend(i.d(), i.a(), [](int r, cond_t c, const Expression * e)
+				{ return Predicate::reg(r, c, e); });
 			break;
 		case NEG:
 			replace(i.d(), Expression::op(NEG, Expression::reg(i.a())));
-			extend(i.d(), i.a(), [](int r, cond_t c, Expression *e)
-				{ return Predicate::reg(r, invert(c), e->copy()); });
+			extend(i.d(), i.a(), [](int r, cond_t c, const Expression * e)
+				{ return Predicate::reg(r, invert(c), e); });
 			break;
 		case NOT:
 			replace(i.d(), Expression::op(NOT, Expression::reg(i.a())));
@@ -78,18 +85,18 @@ public:
 		case ADD:
 			replace(i.d(), Expression::op(ADD,
 				Expression::reg(i.a()), Expression::reg(i.b())));
-			extend(i.d(), i.a(), [i](int r, cond_t c, Expression *e)
-				{ return Predicate::reg(r, c, Expression::op(SUB, e->copy(), Expression::reg(i.b()))); });
-			extend(i.d(), i.b(), [i](int r, cond_t c, Expression *e)
-				{ return Predicate::reg(r, c, Expression::op(SUB, e->copy(), Expression::reg(i.a()))); });
+			extend(i.d(), i.a(), [i](int r, cond_t c, const Expression * e)
+				{ return Predicate::reg(r, c, Expression::op(SUB, e, Expression::reg(i.b()))); });
+			extend(i.d(), i.b(), [i](int r, cond_t c, const Expression * e)
+				{ return Predicate::reg(r, c, Expression::op(SUB, e, Expression::reg(i.a()))); });
 			break;
 		case SUB:
 			replace(i.d(), Expression::op(SUB,
 				Expression::reg(i.a()), Expression::reg(i.b())));
-			extend(i.d(), i.a(), [i](int r, cond_t c, Expression *e)
-				{ return Predicate::reg(r, c, Expression::op(ADD, e->copy(), Expression::reg(i.b()))); });
-			extend(i.d(), i.b(), [i](int r, cond_t c, Expression *e)
-				{ return Predicate::reg(r, invert(c), Expression::op(SUB, Expression::reg(i.a()), e->copy())); });
+			extend(i.d(), i.a(), [i](int r, cond_t c, const Expression * e)
+				{ return Predicate::reg(r, c, Expression::op(ADD, e, Expression::reg(i.b()))); });
+			extend(i.d(), i.b(), [i](int r, cond_t c, const Expression * e)
+				{ return Predicate::reg(r, invert(c), Expression::op(SUB, Expression::reg(i.a()), e)); });
 			break;
 		case SHL:
 		case SHR:
@@ -109,8 +116,8 @@ public:
 			break;
 		case LOAD:
 			replace(i.d(), Expression::mem(Expression::reg(i.a()), i.type()));
-			extend(i.d(), -1, [i](int r, cond_t c, Expression *e)
-				{ return Predicate::mem(Expression::reg(i.b()), i.type(), c, e->copy()); });
+			extend(i.d(), -1, [i](int r, cond_t c, const Expression * e)
+				{ return Predicate::mem(Expression::reg(i.b()), i.type(), c, e); });
 			break;
 		case ASSUME:
 			sr.put(i.d(), i.cond());
@@ -146,9 +153,9 @@ public:
 			out << "[taken]\n";
 		else
 			out << "[not taken]\n";
-		for(auto r: regs.pairs())
+		for(const auto& r: regs.pairs())
 			out << "R" << r.fst << " = " << r.snd << io::endl;
-		for(auto m: mem.pairs())
+		for(const auto& m: mem.pairs())
 			out << "M[" << m.fst << "] = " << m.snd << io::endl;
 		for(auto p: preds)
 			out << p << io::endl;
@@ -156,7 +163,7 @@ public:
 	
 private:
 	
-	void replace(int r, Expression *e) {
+	void replace(int r, const Expression * e) {
 		for(auto ep: regs)
 			ep->substitute(r, e);
 		for(auto ep: mem)
@@ -165,12 +172,11 @@ private:
 			if(!p->expression()->contains(r) && !e->contains(p->definedReg()))
 				p->substitute(r, e);
 		if(regs.hasKey(r)) {
-			delete e;
 			cerr << "Already define: " << r << io::endl;
 		}
 		else {
 			regs.put(r, e);
-			cerr << "Putting: " << r << ": " << e << io::endl;
+			cerr << "Putting: R" << r << ": " << e << io::endl;
 		}
 	}
 	
@@ -190,11 +196,11 @@ private:
 		}
 	}
 	
-	void extend(int r, int rp, std::function<Predicate *(int, cond_t, Expression *)> f) {
+	void extend(int r, int rp, const std::function<Predicate *(int, cond_t, const Expression *)>& f) {
 		Vector<Predicate *> added;
 		for(auto p: preds)
 			if(p->defines(r) && !p->contains(rp))
-				added.add(f(rp, p->condition(), p->expression()->copy()));
+				added.add(f(rp, p->condition(), p->expression()));
 		preds.addAll(added);
 	}
 	
@@ -204,8 +210,8 @@ private:
 			mem.put(addr, Expression::reg(r));
 	}
 	
-	ListMap<int, Expression *> regs;
-	ListMap<Expression *, Expression *, ExpressionComparator> mem;
+	ListMap<int, const Expression *> regs;
+	ListMap<const Expression * , const Expression * , ExpressionComparator> mem;
 	ListMap<int, sem::cond_t> sr;
 	Vector<Predicate *> preds;
 	bool br;

@@ -24,6 +24,7 @@
 
 namespace otawa { namespace pred {
 
+
 struct {
 	int pri;
 	cstring op;
@@ -62,25 +63,26 @@ struct {
 	{ -1, "" },
 	{ -1, "" }
 };
-	
+
+ExpressionManager Expression::expr_manager = ExpressionManager();
+
 class Const: public Expression {
 public:
-	inline Const(t::uint32 c): k(c) {}
+	inline explicit Const(t::uint32 c): k(c) {}
 	bool contains(int r) const override { return false; }
 	bool containsMem() const override { return false; }
-	Expression *substitute(int r, Expression *e) override  { return this; }
+	const  Expression* substitute(int r, const Expression* e) const override  { return this; }
 	void gen(sem::Block& b, int t) const override { b.add(sem::seti(t, k)); }
-	Expression *copy() const override { return new Const(k); }
 	void print(io::Output& out, int pri = 0) const override  { out << k; }
-	bool equals(const Expression *e) const override
-		{ auto ee = dynamic_cast<const Const *>(e); return ee != nullptr && k == ee->k; }
+	bool equals(const Expression* e) const override
+		{ auto ee = dynamic_cast<const Const *>((const Expression*)e); return ee != nullptr && k == ee->k; }
 	kind_t kind() const override { return CST; }
-	int compare(Expression *e) const override {
+	int compare(const Expression* e) const override {
 		int r = CST - e->kind();
 		if(r != 0)
 			return r;
 		else
-			return k - static_cast<Const *>(e)->k;
+			return k - static_cast<Const *>((Expression*)e)->k;
 	}
 private:
 	t::uint32 k;
@@ -88,24 +90,24 @@ private:
 
 class Reg: public Expression {
 public:
-	inline Reg(int num): n(num) {}
+	inline explicit Reg(int num): n(num) {}
 	bool contains(int r) const override { return n == r; }
 	bool containsMem() const override { return false; }
-	Expression *substitute(int r, Expression *e) override
-		{ if(r != n) return this; delete this; return e->copy(); }
+    //ZHEN: delete this????
+	const Expression* substitute(int r, const Expression* e) const override
+		{ if(r != n) return this; else return e; } //TODO should i delete this?
 	void gen(sem::Block& b, int t) const override { b.add(sem::set(t, n)); }
-	Expression *copy() const override { return new Reg(n); }
-	void print(io::Output& out, int pri = 0) const override 
+	void print(io::Output& out, int pri) const override
 		{ if(n >= 0) out << "R" << n; else out << "T" << n; }
-	bool equals(const Expression *e) const override
-		{ auto ee = dynamic_cast<const Reg *>(e); return ee != nullptr && n == ee->n; }
+	bool equals(const Expression* e) const override
+		{ auto ee = dynamic_cast<const Reg *>((const Expression*)e); return ee != nullptr && n == ee->n; }
 	kind_t kind() const override { return REG; }
-	int compare(Expression *e) const override {
+	int compare(const Expression* e) const override {
 		int r = REG - e->kind();
 		if(r != 0)
 			return r;
 		else
-			return n - static_cast<Reg *>(e)->n;
+			return n - static_cast<Reg *>((Expression*)e)->n;
 	}
 private:
 	int n;
@@ -113,14 +115,12 @@ private:
 
 class Mem: public Expression {
 public:
-	inline Mem(Expression *addr, sem::type_t type): a(addr), t(type) {}
-	~Mem() { delete a; }
+	inline Mem(const Expression* addr, sem::type_t type): a(addr), t(type) {}
 	bool contains(int r) const override { return a->contains(r); }
 	bool containsMem() const override { return true; }
 	
-	Expression *substitute(int r, Expression *e) override {
-		a = a->substitute(r, e);
-		return this;
+	const Expression* substitute(int r, const Expression* e) const override {
+        return Expression::mem(a->substitute(r, e), t);
 	}
 	
 	void gen(sem::Block& b, int t_) const override {
@@ -128,51 +128,47 @@ public:
 		b.add(sem::load(t_, t_, t));
 	}
 	
-	Expression *copy() const override { return new Mem(a->copy(), t); }
-	void print(io::Output& out, int pri) const override 
+	void print(io::Output& out, int pri) const override
 		{ out << '*'; a->print(out, 3); }
 
-	bool equals(const Expression *e) const override {
-		auto ee = dynamic_cast<const Mem *>(e);
+	bool equals(const Expression* e) const override {
+		auto ee = dynamic_cast<const Mem *>((const Expression*)e);
 		return ee != nullptr && a == ee->a && t == ee->t;
 	}
 
 	kind_t kind() const override { return MEM; }
 	
-	int compare(Expression *e) const override {
+	int compare(const Expression* e) const override {
 		int r = MEM - e->kind();
 		if(r == 0) {
-			r = t - static_cast<Mem *>(e)->t;
+			r = t - static_cast<Mem *>((Expression*)e)->t;
 			if(r == 0)
-				r = a->compare(static_cast<Mem *>(e)->a);
+				r = a->compare(static_cast<const Mem *>(e)->a);
 		}
 		return r;
 	}
 
 private:
-	Expression *a;
+	const Expression* a;
 	sem::type_t t;
 };
 
 
 class Monadic: public Expression {
 public:
-	inline Monadic(sem::opcode op, Expression *arg): o(op), a(arg) {}
-	~Monadic() { delete a; }
+	inline Monadic(sem::opcode op, const Expression* arg): o(op), a(arg) {}
+	~Monadic() = default;
 	bool contains(int r) const override { return a->contains(r); }
 	bool containsMem() const override { return a->containsMem(); }
 	
-	Expression *substitute(int r, Expression *e) override {
-		a = a->substitute(r, e);
-		return this;
+	const Expression* substitute(int r, const Expression* e)const override {
+		return Expression::op(o, a->substitute(r, e));
 	}
 	
 	void gen(sem::Block& b, int t) const override {
 		a->gen(b, t);
 		b.add(sem::inst(o, t, t));
 	}
-	
-	Expression *copy() const override { return new Monadic(o, a->copy()); }
 	
 	void print(io::Output& out, int p) const override  {
 		auto mp = ops[o].pri;
@@ -182,43 +178,41 @@ public:
 		if(p <= mp) out << ')';
 	}
 
-	bool equals(const Expression *e) const override {
-		auto ee = dynamic_cast<const Monadic *>(e);
+	bool equals(const Expression* e) const override {
+		auto ee = dynamic_cast<const Monadic *>((const Expression*)e);
 		return ee != nullptr && o == ee->o && a == ee->a;
 	}
 
 	kind_t kind() const override { return MON; }
 	
-	int compare(Expression *e) const override {
+	int compare(const Expression* e) const override {
 		int r = MON - e->kind();
 		if(r == 0) {
-			r = o - static_cast<Monadic *>(e)->o;
+			r = o - static_cast<Monadic *>((Expression*)e)->o;
 			if(r == 0)
-				r = a->compare(static_cast<Monadic *>(e)->a);
+				r = a->compare(static_cast<Monadic *>((Expression*)e)->a);
 		}
 		return r;
 	}
 
 private:
 	sem::opcode o;
-	Expression *a;
+	const Expression* a;
 };
 
 
 class Dyadic: public Expression {
 public:
-	inline Dyadic(sem::opcode op, Expression *arg1, Expression *arg2)
+	inline Dyadic(sem::opcode op, const Expression* arg1, const Expression* arg2)
 		: o(op), a1(arg1), a2(arg2) {}
-	~Dyadic() { delete a1; delete a2; }
+	~Dyadic() = default;
 	bool contains(int r) const override
 		{ return a1->contains(r) || a2->contains(r); }
 	bool containsMem() const override
 		{ return a1->containsMem() || a2->containsMem(); }
 	
-	Expression *substitute(int r, Expression *e) override {
-		a1 = a1->substitute(r, e);
-		a2 = a2->substitute(r, e);
-		return this;
+	const Expression* substitute(int r, const Expression* e)const override {
+        return Expression::op(o, a1->substitute(r,e), a2->substitute(r,e));
 	}
 	
 	void gen(sem::Block& b, int t) const {
@@ -226,9 +220,6 @@ public:
 		a2->gen(b, t + 1);
 		b.add(sem::inst(o, t, t, t + 1));
 	}
-	
-	Expression *copy() const override
-		{ return new Dyadic(o, a1->copy(), a2->copy()); }
 	
 	void print(io::Output& out, int p) const override  {
 		auto mp = ops[o].pri;
@@ -239,21 +230,21 @@ public:
 		if(p <= mp) out << ')';
 	}
 
-	bool equals(const Expression *e) const override {
-		auto ee = dynamic_cast<const Dyadic *>(e);
+	bool equals(const Expression* e) const override {
+		auto ee = dynamic_cast<const Dyadic *>((const Expression*)e);
 		return ee != nullptr && o == ee->o && a1 == ee->a1 && a2 == ee->a2;
 	}
 
 	kind_t kind() const override { return BIN; }
 	
-	int compare(Expression *e) const override {
+	int compare(const Expression* e) const override {
 		int r = BIN - e->kind();
 		if(r == 0) {
-			r = o - static_cast<Dyadic *>(e)->o;
+			r = o - static_cast<Dyadic *>((Expression*)e)->o;
 			if(r == 0) {
-				r = a1->compare(static_cast<Dyadic *>(e)->a1);
+				r = a1->compare(static_cast<Dyadic *>((Expression*)e)->a1);
 				if(r == 0)
-					r = a2->compare(static_cast<Dyadic *>(e)->a2);
+					r = a2->compare(static_cast<Dyadic *>((Expression*)e)->a2);
 			}
 		}
 		return r;
@@ -262,7 +253,7 @@ public:
 
 private:
 	sem::opcode o;
-	Expression *a1, *a2;
+	const Expression *a1, *a2;
 };
 
 
@@ -283,29 +274,79 @@ private:
  */
 
 ///
-Expression::~Expression() {
+Expression::~Expression() {}
+
+ExpressionManager::~ExpressionManager(){for (auto* expr: _unique_tab ) delete expr;};
+//TODO check in the hashtable and return
+const Expression *ExpressionManager::makeCst(t::uint32 k) {
+    Const new_expr {k};
+    auto find = _unique_tab.get(&new_expr);
+    if (find.some())
+        return find.value();
+    auto* new_cst = new Const{k};
+    _unique_tab.add(new_cst, new_cst);
+    return new_cst;
 }
 
+const Expression *ExpressionManager::makeReg(int r) {
+    Reg new_expr {r};
+    auto find = _unique_tab.get(&new_expr);
+    if (find.some())
+        return find.value();
+    auto* new_cst = new Reg{r};
+    _unique_tab.add(new_cst, new_cst);
+    return new_cst;
+}
+
+const Expression *ExpressionManager::makeMem(const Expression* addr, sem::type_t t) {
+    Mem new_expr {addr, t};
+    auto find = _unique_tab.get(&new_expr);
+    if (find.some())
+        return find.value();
+    auto* new_cst = new Mem{addr, t};
+    _unique_tab.add(new_cst, new_cst);
+    return new_cst;
+}
+
+const Expression *ExpressionManager::makeOp(sem::opcode op, const Expression* e){
+    Monadic new_expr {op,e};
+    auto find = _unique_tab.get(&new_expr);
+    if (find.some())
+        return find.value();
+    auto* new_cst = new Monadic{op, e};
+    _unique_tab.add(new_cst, new_cst);
+    return new_cst;
+}
+
+const Expression *ExpressionManager::makeOp(sem::opcode op, const Expression* e1, const Expression* e2){
+    Dyadic new_expr {op,e1, e2};
+    auto find = _unique_tab.get(&new_expr);
+    if (find.some())
+        return find.value();
+    auto* new_cst = new Dyadic{op, e1, e2};
+    _unique_tab.add(new_cst, new_cst);
+    return new_cst;
+}
 /**
  * Build an expression for a register read.
  * @param r		Register index.
  * @return		Built expression.
  */
-Expression *Expression::reg(int r) { return new Reg(r); }
+const Expression* Expression::reg(int r) { return expr_manager.makeReg(r); }
 
 /**
  * Build an expression for a memory read.
  * @param a		Memory address.
  * @return		Built expression.
  */
-Expression *Expression::mem(Expression *a, sem::type_t t) { return new Mem(a, t); }
+const Expression* Expression::mem(const Expression* a, sem::type_t t) { return expr_manager.makeMem(a, t); }
 
 /**
  * Build an expression for a constant.
  * @param k		Constant value.
  * @return		Built expression.
  */
-Expression *Expression::cst(t::uint32 k) { return new Const(k); }
+const Expression* Expression::cst(t::uint32 k) { return expr_manager.makeCst(k); }
 
 /**
  * Build an expression for a monadic expression.
@@ -313,8 +354,8 @@ Expression *Expression::cst(t::uint32 k) { return new Const(k); }
  * @param a		Argument.
  * @return		Built expression.
  */
-Expression *Expression::op(sem::opcode op, Expression *a)
-	{ return new Monadic(op, a); }
+const Expression* Expression::op(sem::opcode op, const Expression* a)
+	{ return expr_manager.makeOp(op, a); }
 
 /**
  * Build an expression for a dyadic expression.
@@ -323,8 +364,8 @@ Expression *Expression::op(sem::opcode op, Expression *a)
  * @param a2	Second argument.
  * @return		Built expression.
  */
-Expression *Expression::op(sem::opcode op, Expression *a1, Expression *a2)
-	{ return new Dyadic(op, a1, a2); }
+const Expression* Expression::op(sem::opcode op,const Expression* a1, const Expression* a2)
+	{ return expr_manager.makeOp(op, a1, a2); }
 
 /**
  * @fn bool Expression::contains(int r) const;
@@ -370,9 +411,9 @@ Expression *Expression::op(sem::opcode op, Expression *a1, Expression *a2)
 
 class RegPredicate: public Predicate {
 public:
-	RegPredicate(int reg, sem::cond_t op, Expression *e): Predicate(op, e), r(reg) {}
+	RegPredicate(int reg, sem::cond_t op, const Expression* e): Predicate(op, e), r(reg) {}
 	Predicate *copy() const override
-		{ return new RegPredicate(r, condition(), expression()->copy()); }
+		{ return new RegPredicate(r, condition(), expression()); }
 	bool defines(int reg) const override { return r == reg && condition() == sem::EQ; }
 	bool definesMem() const override { return false; }
 	bool contains(int reg) const override
@@ -390,11 +431,11 @@ private:
 
 class MemPredicate: public Predicate {
 public:
-	MemPredicate(Expression *addr, sem::type_t type, sem::cond_t op, Expression *e)
+	MemPredicate(const Expression* addr, sem::type_t type, sem::cond_t op, const Expression* e)
 		: Predicate(op, e), a(addr), t(type) {}
-	~MemPredicate() { delete a; }
+	~MemPredicate() = default;
 	Predicate *copy() const override {
-		return new MemPredicate(a->copy(), t, condition(), expression()->copy());
+		return new MemPredicate(a, t, condition(), expression());
 	}
 	bool defines(int reg) const override { return false; }
 	bool definesMem() const override { return true; }
@@ -410,16 +451,16 @@ public:
 		b.add(sem::assume(condition(), -4));
 		b.add(sem::store(-3, -2, t));
 	}
-	void substitute(int r, Expression *e) override {
+	void substitute(int r, const Expression* e) override {
 		Predicate::substitute(r, e);
 		auto na = a->substitute(r, e);
-		if(na != a)
-			delete a;
+		//if(na != a)
+		//	delete a;
 		a = na;
 	}
 	int definedReg() const override { return -1; }
 private:
-	Expression *a;
+	const Expression* a;
 	sem::type_t t;
 };
 
@@ -436,10 +477,10 @@ private:
  */
 
 ///
-Predicate::Predicate(sem::cond_t cond, Expression *expr): c(cond), e(expr) { }
+Predicate::Predicate(sem::cond_t cond, const Expression* expr): c(cond), e(expr){ }
 
 ///
-Predicate::~Predicate() { delete e; }
+Predicate::~Predicate() = default;
 
 /**
  * Build a predicate applied to a register.
@@ -448,7 +489,8 @@ Predicate::~Predicate() { delete e; }
  * @param e		Constraining expresssion.
  * @return		Built predicate.
  */
-Predicate *Predicate::reg(int reg, sem::cond_t op, Expression *e) { return nullptr; }
+ // TODO ZHEN: why return nullptr?
+Predicate *Predicate::reg(int reg, sem::cond_t op, const Expression* e) { return nullptr; }
 
 /**
  * Build a predicate applied to a memory call.
@@ -458,7 +500,7 @@ Predicate *Predicate::reg(int reg, sem::cond_t op, Expression *e) { return nullp
  * @param t		Type of memory access.
  * @return		Built predicate.
  */
-Predicate *Predicate::mem(Expression *a, sem::type_t t, sem::cond_t op, Expression *e) { return new MemPredicate(a, t, op, e); }
+Predicate *Predicate::mem(const Expression* a, sem::type_t t, sem::cond_t op, const Expression* e) { return new MemPredicate(a, t, op, e); }
 
 ///
 void Predicate::print(io::Output& out) const {
@@ -526,14 +568,14 @@ void Predicate::print(io::Output& out) const {
  */
 
 /**
- * Sustitute in the predicate the register r by the expression e.
+ * Sustitute in the predicate the register r by the expression expr.
  * @param r		Register to substitute.
- * @param e		Expression to substitute with.
+ * @param expr		Expression to substitute with.
  */
-void Predicate::substitute(int r, Expression *e) {
-	auto ne = e->substitute(r, e);
-	if(ne != e)
-		delete e;
+void Predicate::substitute(int r, const Expression* expr) {
+	auto ne = expr->substitute(r, expr);
+	//if(ne != expr)
+	//	delete expr;
 	e = ne;
 }
 
@@ -602,7 +644,7 @@ void Conjunct::map(std::function<Predicate *(Predicate *)> f) {
  * @param reg		Looked register or temporary number.
  * @return			Found definition or null.
  */
-Expression *Conjunct::definitionOf(int reg) {
+const Expression* Conjunct::definitionOf(int reg) {
 	for(auto p: ps)
 		if(p->defines(reg))
 			return p->expression();

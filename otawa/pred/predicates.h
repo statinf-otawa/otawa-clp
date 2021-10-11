@@ -26,12 +26,45 @@
 #include <elm/io.h>
 #include <elm/data/Vector.h>
 #include <otawa/sem/inst.h>
+#include <elm/data/HashMap.h>
+
+namespace otawa {
+    namespace pred {
+        class Expression;
+    }
+}
+namespace elm{
+    template<>
+    class HashKey<const otawa::pred::Expression*>{
+    public:
+        t::hash computeHash(const otawa::pred::Expression* key) const {return 0;};
+        bool isEqual(const otawa::pred::Expression* key1, const otawa::pred::Expression* key2)const {return true;};
+        static  t::hash hash(const otawa::pred::Expression* e){return 0;};
+        static  bool equals(const otawa::pred::Expression* e1, const otawa::pred::Expression* e2 ){return 0;}
+    };
+}
 
 namespace otawa { namespace pred {
 
 using namespace elm;
 
-class Expression;
+
+//typedef OwnedPtr<Expression> Expression*;
+//typedef BorrowedPtr<Expression> Expression*;
+
+
+class ExpressionManager{
+public:
+    ExpressionManager()= default;;
+    ~ExpressionManager();
+    const Expression* makeReg(int r);
+    const Expression* makeMem(const Expression* addr, sem::type_t t);
+    const Expression* makeCst(t::uint32 k);
+    const Expression* makeOp(sem::opcode op, const Expression* e);
+    const Expression* makeOp(sem::opcode op, const Expression* e1, const Expression* e2);
+private:
+    HashMap<const Expression*, const Expression*> _unique_tab;
+};
 
 class Expression {
 public:
@@ -43,36 +76,40 @@ public:
 		MON,
 		BIN
 	} kind_t;
-	
+
+
 	virtual ~Expression();
-	static Expression *reg(int r);
-	static Expression *mem(Expression *a, sem::type_t t);
-	static Expression *cst(t::uint32 k);
-	static Expression *op(sem::opcode op, Expression *a);
-	static Expression *op(sem::opcode op, Expression *a1, Expression *a2);
+	static const Expression* reg(int r);
+	static const Expression* mem(const Expression* a, sem::type_t t);
+	static const Expression* cst(t::uint32 k);
+	static const Expression* op(sem::opcode op, const Expression* a);
+	static const Expression* op(sem::opcode op, const Expression* a1, const Expression* a2);
 
 	virtual kind_t kind() const = 0;
 	virtual bool contains(int r) const = 0;
 	virtual bool containsMem() const = 0;
-	virtual Expression *substitute(int r, Expression *e) = 0;
+	virtual const Expression* substitute(int r, const Expression* e) const = 0;
 
 	virtual void gen(sem::Block& b, int t) const = 0;
-	virtual Expression *copy() const = 0;
 	virtual void print(io::Output& out, int pri = 17) const = 0;
-	virtual bool equals(const Expression *e) const = 0;
-	virtual int compare(Expression *e) const = 0;
+	virtual bool equals(const Expression* e) const = 0;
+	virtual int compare(const Expression* e) const = 0;
 	
-	inline bool operator==(const Expression *e) const { return equals(e); }
-	inline bool operator!=(const Expression *e) const { return !equals(e); }
+	inline bool operator==(const Expression* e) const { return equals(e); }
+	inline bool operator!=(const Expression* e) const { return !equals(e); }
+
+private:
+
+    static ExpressionManager expr_manager;
 };
 
 class Predicate {
 public:
 	virtual ~Predicate();
-	static Predicate *reg(int reg, sem::cond_t op, Expression *e);
-	static Predicate *mem(Expression *a, sem::type_t t, sem::cond_t op, Expression *e);
+	static Predicate *reg(int reg, sem::cond_t op, const Expression* e);
+	static Predicate *mem(const Expression* a, sem::type_t t, sem::cond_t op, const Expression* e);
 	inline sem::cond_t condition() const { return c; }
-	inline Expression *expression() const { return e; }
+	inline const Expression* expression() const { return e; }
 	void print(io::Output& out) const;
 	virtual Predicate *copy() const = 0;
 	virtual bool defines(int reg) const = 0;
@@ -81,14 +118,14 @@ public:
 	virtual bool containsMem() const = 0;
 	virtual void gen(sem::Block& b) = 0;
 	virtual int definedReg() const = 0;
-	virtual void substitute(int r, Expression *e);
+	virtual void substitute(int r, const Expression* expr);
 protected:
-	Predicate(sem::cond_t cond, Expression *expr);
+	Predicate(sem::cond_t cond, const Expression* expr);
 private:
 	sem::cond_t c;
-	Expression *e;
+	const Expression* e;
 };
-inline io::Output& operator<<(io::Output& out, Expression *e) { e->print(out); return out; }
+inline io::Output& operator<<(io::Output& out, const Expression *e) { e->print(out); return out; }
 
 class Conjunct {
 public:
@@ -97,7 +134,7 @@ public:
 	inline const Vector<Predicate *>& predicates() const { return ps; }
 	void print(io::Output& out) const;
 	Conjunct *copy() const;
-	Expression *definitionOf(int reg);
+	const Expression* definitionOf(int reg);
 	void map(std::function<Predicate *(Predicate *)> f);
 	void gen(sem::Block& b);
 private:
@@ -117,5 +154,6 @@ private:
 };
 
 }}	// otawa::sem
+
 
 #endif	// OTAWA_PRED_PREDICATES_H

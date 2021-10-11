@@ -24,75 +24,160 @@
 
 #include <elm/assert.h>
 
+namespace elm {
+    template<class T>
+    class OwnedPtr;
+
+    template<class T>
+    class BorrowedPtr {
+    public:
+        BorrowedPtr() : _ptr(nullptr) {};
+
+        BorrowedPtr(const BorrowedPtr &) = default;
+
+        // Cast From OwnedPtr is possible
+        BorrowedPtr(const OwnedPtr<T> &t) : _ptr(t._ptr) {};
+
+        // Construction from native pointer is possible
+        BorrowedPtr(T *ptr) : _ptr(ptr) {};
+
+        // Do not delete the pointer when destructed
+        ~BorrowedPtr() = default;
+
+        // Disable heap allocation/free
+        void *operator new(unsigned long count) = delete;
+
+        void *operator new[](unsigned long count) = delete;
+
+        void operator delete(void *ptr) = delete;
+
+        void operator delete[](void *ptr) = delete;
+
+        inline explicit operator bool() const { return _ptr == nullptr; };
+
+        // Accessing
+        inline T &operator*() {
+            ASSERTP(!operator bool(), "nullptr! Probably you are using a moved owned pointer or an uninitialised pointer");
+            return *_ptr;
+        }
+
+        inline T *operator->() {
+            ASSERTP(!operator bool(), "nullptr! Probably you are using a moved owned pointer or an uninitialised pointer");
+            return _ptr;
+        };
+
+        // Const versions
+        inline const T &operator*() const {
+            ASSERTP(!operator bool(), "nullptr! Probably you are using a moved owned pointer or an uninitialised pointer");
+            return *_ptr;
+        };
+
+        inline const T *operator->() const {
+            ASSERTP(!operator bool(), "nullptr! Probably you are using a moved owned pointer or an uninitialised pointer");
+            return _ptr;
+        };
+
+        // Cast to the pointer
+        inline explicit operator const T *() const { return _ptr; };
+
+        inline explicit operator T *() { return _ptr; };
+
+        // Comparing just like native pointers
+        inline bool operator==(const OwnedPtr<T> &t) const { return _ptr == t._ptr; };
+
+        inline bool operator!=(const OwnedPtr<T> &t) const { return _ptr != t._ptr; };
+    private:
+        T *_ptr;
+    };
+
+    template<class T>
+    class OwnedPtr {
+    public:
+        friend class BorrowedPtr<T>;
+
+        OwnedPtr() : _ptr(nullptr) {};
+
+        // By rvalue reference, requires an empty constructor and a copy-assignement of T;
+        //OwnedPtr(T&& t):_ptr(new T()){*_ptr = t;};
+        // To be more clear that a heap allocation occurred, one can use this method
+        //static OwnedPtr newFrom(T&& t){
+        //    OwnedPtr op;
+        //    op._ptr = new T();
+        //    *op._ptr = t;
+        //    return op;
+        //};
 
 
-template<class T> class OwnedPtr;
 
-template<class T>
-class BorrowedPtr{
-public:
-    BorrowedPtr():_ptr(nullptr){};
-    BorrowedPtr(const BorrowedPtr&)=default;
+        // Construction from native pointer is possible
+        OwnedPtr(T *t) : _ptr(t) {};
 
-    // Cast From OwnedPtr is possible
-    BorrowedPtr(const OwnedPtr<T>& t):_ptr(t._ptr){};
+        // Create an owned pointer from an existing one, ownership is transferred
+        OwnedPtr(OwnedPtr<T> &&t) : _ptr(t._ptr) { if (this != &t) t._ptr = nullptr; };
 
-    // Construction from native pointer is possible
-    BorrowedPtr(T* ptr):_ptr(ptr){};
+        OwnedPtr(OwnedPtr<T> &t) : _ptr(t._ptr) { if (this != &t) t._ptr = nullptr; };
 
-    // Do not delete the pointer when destructed
-    ~BorrowedPtr()= default;
+        ~OwnedPtr() { delete _ptr; };
 
-    // Disable heap allocation/free
-    void* operator new (unsigned long count)=delete;
-    void* operator new[] (unsigned long count)=delete;
-    void operator delete  ( void* ptr )=delete;
-    void operator delete[]( void* ptr )=delete;
+        // Disable heap allocation/free, the pointer is freed when last owner is destroyed
+        void *operator new(unsigned long count) = delete;
 
-    inline bool isNull(){return _ptr== nullptr;};
+        void *operator new[](unsigned long count) = delete;
 
-    // Access operations, the cast operator is not provided to limit its behavior
-    inline T& operator*(){ ASSERTP(!isNull(), "nullptr! Probably you are using a moved owned pointer or an uninitialised pointer"); return *_ptr;};
-    inline T* operator->(){ ASSERTP(!isNull(), "nullptr! Probably you are using a moved owned pointer or an uninitialised pointer"); return _ptr;};
-private:
-    T* _ptr;
-};
+        void operator delete(void *ptr) = delete;
 
-template<class T>
-class OwnedPtr{
-public:
-    friend class BorrowedPtr<T>;
-    OwnedPtr():_ptr(nullptr){};
+        void operator delete[](void *ptr) = delete;
 
-    // Construction from native pointer is possible
-    OwnedPtr(T* t):_ptr(t){};
+        inline explicit operator bool() const { return _ptr == nullptr; };
 
-    // Create an owned pointer from an existing one, ownership is transferred
-    OwnedPtr(OwnedPtr<T>& t):_ptr(t._ptr){t._ptr = nullptr;};
+        // Transfer the ownership
+        OwnedPtr<T> &operator=(OwnedPtr<T> &t) noexcept {
+            if (&t != this)
+                t._ptr = nullptr;
+            return *this;
+        }
 
-    ~OwnedPtr(){delete _ptr;};
+        OwnedPtr<T> &operator=(OwnedPtr<T> &&t) noexcept {
+            if (&t != this)
+                t._ptr = nullptr;
+            return *this;
+        }
 
-    // Disable heap allocation/free, the pointer is freed when last owner is destroyed
-    void* operator new (unsigned long count)=delete;
-    void* operator new[] (unsigned long count)=delete;
-    void operator delete  ( void* ptr )=delete;
-    void operator delete[]( void* ptr )=delete;
+        // Accessing
+        inline T &operator*() {
+            ASSERTP(!operator bool(), "nullptr! Probably you are using a moved owned pointer or an uninitialised pointer");
+            return *_ptr;
+        }
 
-    inline bool isNull(){return _ptr== nullptr;};
+        inline T *operator->() {
+            ASSERTP(!operator bool(), "nullptr! Probably you are using a moved owned pointer or an uninitialised pointer");
+            return _ptr;
+        };
 
-    // Transfer the ownership
-    OwnedPtr<T>& operator=(OwnedPtr<T>& t) noexcept {
-        if (&t == this)
-            t._ptr = nullptr;
-        return *this;
-    }
+        // Const versions
+        inline const T &operator*() const {
+            ASSERTP(!operator bool(), "nullptr! Probably you are using a moved owned pointer or an uninitialised pointer");
+            return *_ptr;
+        };
 
-    // Access operations, the cast operator is not provided to limit its behavior
-    inline T& operator*(){ ASSERTP(!isNull(), "nullptr! Probably you using an uninitialised pointer"); return *_ptr;};
-    inline T* operator->(){ ASSERTP(!isNull(), "nullptr! Probably you are using an uninitialised pointer"); return _ptr;};
+        inline const T *operator->() const {
+            ASSERTP(!operator bool(), "nullptr! Probably you are using a moved owned pointer or an uninitialised pointer");
+            return _ptr;
+        };
 
-private:
-    T* _ptr;
-};
+        // Cast to the pointer
+        inline explicit operator const T *() const { return (const T *) _ptr; };
+
+        inline explicit operator T *() { return _ptr; };
+
+        // Comparing just like native pointers
+        inline bool operator==(const OwnedPtr<T> &t) const { return _ptr == t._ptr; };
+
+        inline bool operator!=(const OwnedPtr<T> &t) const { return _ptr != t._ptr; };
+
+    private:
+        T *_ptr;
+    };
+}
 
 #endif //OWNERSHIPPTR_H
