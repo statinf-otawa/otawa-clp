@@ -84,6 +84,7 @@ public:
 		else
 			return k - static_cast<Const *>((Expression*)e)->k;
 	}
+    t::hash hash() const override{return k^(CST << 28);}
 private:
 	t::uint32 k;
 };
@@ -93,12 +94,11 @@ public:
 	inline explicit Reg(int num): n(num) {}
 	bool contains(int r) const override { return n == r; }
 	bool containsMem() const override { return false; }
-    //ZHEN: delete this????
 	const Expression* substitute(int r, const Expression* e) const override
-		{ if(r != n) return this; else return e; } //TODO should i delete this?
+		{ if(r != n) return this; else return e; }
 	void gen(sem::Block& b, int t) const override { b.add(sem::set(t, n)); }
 	void print(io::Output& out, int pri) const override
-		{ if(n >= 0) out << "R" << n; else out << "T" << n; }
+		{ if(n >= 0) out << "R" << n; else out << "T" << -n; }
 	bool equals(const Expression* e) const override
 		{ auto ee = dynamic_cast<const Reg *>((const Expression*)e); return ee != nullptr && n == ee->n; }
 	kind_t kind() const override { return REG; }
@@ -109,6 +109,7 @@ public:
 		else
 			return n - static_cast<Reg *>((Expression*)e)->n;
 	}
+    t::hash hash() const override{return n^(REG << 28);}
 private:
 	int n;
 };
@@ -129,7 +130,7 @@ public:
 	}
 	
 	void print(io::Output& out, int pri) const override
-		{ out << '*'; a->print(out, 3); }
+		{ out << "*("; a->print(out, 3); out << ")";}
 
 	bool equals(const Expression* e) const override {
 		auto ee = dynamic_cast<const Mem *>((const Expression*)e);
@@ -147,6 +148,11 @@ public:
 		}
 		return r;
 	}
+
+    t::hash hash() const override{
+        auto expr = (t::uint32)(t::intptr)a;
+        return expr ^ (MEM << 28) ^ (t << 24);
+    }
 
 private:
 	const Expression* a;
@@ -195,6 +201,10 @@ public:
 		return r;
 	}
 
+    t::hash hash()const override{
+        auto expr = (t::uint32)(t::intptr)a;
+        return expr ^ (MON << 28) ^ o;
+    }
 private:
 	sem::opcode o;
 	const Expression* a;
@@ -250,6 +260,12 @@ public:
 		return r;
 	}
 
+    t::hash hash() const override {
+        // take the 16 bits in the middle
+        auto expr1 = (t::uint32)(t::intptr)a1 << 8 >> 16;
+        auto expr2 = (t::uint32)(t::intptr)a2 << 8 >> 16;
+        return expr1 ^ (expr2 << 16) ^ (BIN << 28);
+    }
 
 private:
 	sem::opcode o;
@@ -432,19 +448,19 @@ private:
 class MemPredicate: public Predicate {
 public:
 	MemPredicate(const Expression* addr, sem::type_t type, sem::cond_t op, const Expression* e)
-		: Predicate(op, e), a(addr), t(type) {}
-	~MemPredicate() = default;
+		: Predicate(op, e), _addr(addr), t(type) {}
+	~MemPredicate() override = default;
 	Predicate *copy() const override {
-		return new MemPredicate(a, t, condition(), expression());
+		return new MemPredicate(_addr, t, condition(), expression());
 	}
 	bool defines(int reg) const override { return false; }
 	bool definesMem() const override { return true; }
 	bool contains(int reg) const override
-		{ return a->contains(reg) || expression()->contains(reg); }
+		{ return _addr->contains(reg) || expression()->contains(reg); }
 	bool containsMem() const override
-		{ return a->containsMem() || expression()->containsMem(); }
+		{ return _addr->containsMem() || expression()->containsMem(); }
 	void gen(sem::Block& b) override {
-		a->gen(b, -1);
+		_addr->gen(b, -1);
 		expression()->gen(b, -2);
 		b.add(sem::load(-3, -2, t));
 		b.add(sem::cmp(-4, -3, -1));
@@ -453,14 +469,12 @@ public:
 	}
 	void substitute(int r, const Expression* e) override {
 		Predicate::substitute(r, e);
-		auto na = a->substitute(r, e);
-		//if(na != a)
-		//	delete a;
-		a = na;
+		_addr = _addr->substitute(r, e);
 	}
 	int definedReg() const override { return -1; }
 private:
-	const Expression* a;
+    //The memory address
+	const Expression* _addr;
 	sem::type_t t;
 };
 
@@ -573,10 +587,7 @@ void Predicate::print(io::Output& out) const {
  * @param expr		Expression to substitute with.
  */
 void Predicate::substitute(int r, const Expression* expr) {
-	auto ne = expr->substitute(r, expr);
-	//if(ne != expr)
-	//	delete expr;
-	e = ne;
+    e = e->substitute(r, expr);
 }
 
 

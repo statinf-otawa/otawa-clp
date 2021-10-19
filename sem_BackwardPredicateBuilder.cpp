@@ -42,9 +42,10 @@ public:
     ~State(){
         for (auto x:regs)
             delete &(*x);
-        for (auto x:mem)
-            delete &(*x);
-        // TODO i did not free the keys of mem, they are not freed
+        for (auto& x:mem.pairs()) {
+            delete x.fst;
+            delete x.snd;
+        }
     };
 
 	State *copy() const {
@@ -153,8 +154,12 @@ public:
 			out << "[taken]\n";
 		else
 			out << "[not taken]\n";
-		for(const auto& r: regs.pairs())
-			out << "R" << r.fst << " = " << r.snd << io::endl;
+		for(const auto& r: regs.pairs()) {
+            if (r.fst < 0 )
+                out << "T" << -r.fst << "\' = " << r.snd << io::endl;
+            else
+                out << "R" << r.fst << "\' = " << r.snd << io::endl;
+        }
 		for(const auto& m: mem.pairs())
 			out << "M[" << m.fst << "] = " << m.snd << io::endl;
 		for(auto p: preds)
@@ -162,25 +167,28 @@ public:
 	}
 	
 private:
-	
-	void replace(int r, const Expression * e) {
-		for(auto ep: regs)
-			ep->substitute(r, e);
-		for(auto ep: mem)
-			ep->substitute(r, e);
-		for(auto p: preds)
-			if(!p->expression()->contains(r) && !e->contains(p->definedReg()))
-				p->substitute(r, e);
-		if(regs.hasKey(r)) {
-			cerr << "Already define: " << r << io::endl;
-		}
-		else {
-			regs.put(r, e);
-			cerr << "Putting: R" << r << ": " << e << io::endl;
-		}
-	}
-	
-	void addPred(int s, int a, int b, bool uns) {
+
+    void replace(int r, const Expression * e) {
+        for(auto& ep: regs)
+            ep = ep->substitute(r, e);
+        for(auto& ep: mem)
+            ep = ep->substitute(r, e);
+        for(auto p: preds)
+            if(!p->expression()->contains(r) && !e->contains(p->definedReg()))
+                p->substitute(r, e);
+        if(regs.hasKey(r)) {
+            cerr << "Already define: " << r << io::endl;
+        }
+        else {
+            regs.put(r, e);
+            if (r >= 0)
+                cerr << "Putting: R" << r << "': " << e << io::endl;
+            else
+                cerr << "Putting: T" << -r << "': " << e << io::endl;
+        }
+    }
+
+    void addPred(int s, int a, int b, bool uns) {
 		auto c = sr.get(s, NO_COND);
 		if(c != NO_COND) {
 			if(uns)
@@ -254,7 +262,7 @@ public:
 protected:
 	
 	void destroy(WorkSpace *ws) override {
-		for(auto p: _map) {
+		for(const auto& p: _map) {
 			delete p.fst;
 			delete p.snd;
 		}
