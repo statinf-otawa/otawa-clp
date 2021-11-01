@@ -432,6 +432,7 @@ public:
 		{ return new RegPredicate(r, condition(), expression()); }
 	bool defines(int reg) const override { return r == reg && condition() == sem::EQ; }
 	bool definesMem() const override { return false; }
+    bool definesAnyReg() const override { return true; }
 	bool contains(int reg) const override
 		{ return r == reg || expression()->contains(reg); }
 	bool containsMem() const override { return expression()->containsMem(); }
@@ -441,6 +442,13 @@ public:
 		b.add(assume(condition(), -2));
 	}
 	int definedReg() const override { return r; }
+    void print(io::Output &out) const override{
+        if (r < 0)
+            out << "T" << -r << " ";
+        else
+            out << "R" << r << " ";
+        Predicate::print(out);
+    }
 private:
 	int r;
 };
@@ -455,6 +463,7 @@ public:
 	}
 	bool defines(int reg) const override { return false; }
 	bool definesMem() const override { return true; }
+    bool definesAnyReg() const override { return false; }
 	bool contains(int reg) const override
 		{ return _addr->contains(reg) || expression()->contains(reg); }
 	bool containsMem() const override
@@ -471,7 +480,12 @@ public:
 		Predicate::substitute(r, e);
 		_addr = _addr->substitute(r, e);
 	}
-	int definedReg() const override { return -1; }
+    // FIXME: negative numbers are used as temps
+	int definedReg() const override { ASSERT(false); return -1; }
+    void print(io::Output &out) const override{
+        out << "ADDR(" << *_addr << ") ";
+        Predicate::print(out);
+    }
 private:
     //The memory address
 	const Expression* _addr;
@@ -503,8 +517,7 @@ Predicate::~Predicate() = default;
  * @param e		Constraining expresssion.
  * @return		Built predicate.
  */
- // TODO ZHEN: why return nullptr?
-Predicate *Predicate::reg(int reg, sem::cond_t op, const Expression* e) { return nullptr; }
+Predicate *Predicate::reg(int reg, sem::cond_t op, const Expression* e) { return new RegPredicate(reg, op, e); }
 
 /**
  * Build a predicate applied to a memory call.
@@ -519,12 +532,14 @@ Predicate *Predicate::mem(const Expression* a, sem::type_t t, sem::cond_t op, co
 ///
 void Predicate::print(io::Output& out) const {
 	static cstring ops[] = {
-		"_",
+		"NO_COND",
 		"==",
 		"<",
 		"<=",
 		">=",
 		">",
+        "RESERVED",
+        "RESERVED",
 		"T",
 		"!=",
 		"<+",

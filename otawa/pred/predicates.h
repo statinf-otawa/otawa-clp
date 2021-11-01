@@ -99,13 +99,15 @@ namespace otawa { namespace pred {
 
             inline const Expression *expression() const { return e; }
 
-            void print(io::Output &out) const;
+            virtual void print(io::Output &out) const;
 
             virtual Predicate *copy() const = 0;
 
             virtual bool defines(int reg) const = 0;
 
             virtual bool definesMem() const = 0;
+
+            virtual bool definesAnyReg() const = 0;
 
             virtual bool contains(int reg) const = 0;
 

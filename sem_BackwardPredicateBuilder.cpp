@@ -121,13 +121,15 @@ public:
 				{ return Predicate::mem(Expression::reg(i.b()), i.type(), c, e); });
 			break;
 		case ASSUME:
-			sr.put(i.d(), i.cond());
+			sr.put(i.sr(), i.cond());
 			break;
 		case CMP:
-			addPred(i.d(), i.a(), i.b(), false);
+            if (br)
+			    addPred(i.d(), i.a(), i.b(), false);
 			break;
 		case CMPU:
-			addPred(i.d(), i.a(), i.b(), true);
+            if (br)
+			    addPred(i.d(), i.a(), i.b(), true);
 			break;
 		case NOP:
 		case STORE:
@@ -162,11 +164,34 @@ public:
         }
 		for(const auto& m: mem.pairs())
 			out << "M[" << m.fst << "] = " << m.snd << io::endl;
-		for(auto p: preds)
-			out << p << io::endl;
+
+        for(const auto& s: sr.pairs()){
+            out << "R" << s.fst << " ~ " << s.snd << io::endl;
+        }
+		for(auto p: preds) {
+            p->print(out);
+            out << io::endl;
+        }
 	}
-	
+
+    inline bool isTakingBranch() const {return br;}
+    inline const Vector<Predicate *>& predicates() const{return preds;};
+    inline const ListMap<int, sem::cond_t>& sr_predicates() const{return sr;};
+
 private:
+
+    /**
+     * remove from preds all predicate that defines register r
+     * @param r the number of the register r
+     */
+    void clearPredDefined(int r){
+        Vector<Predicate*> new_preds;
+        for (auto* pred:preds)
+            if (pred->definedReg() != r)
+                new_preds.add(pred);
+
+        preds = new_preds;
+    }
 
     void replace(int r, const Expression * e) {
         for(auto& ep: regs)
@@ -174,7 +199,7 @@ private:
         for(auto& ep: mem)
             ep = ep->substitute(r, e);
         for(auto p: preds)
-            if(!p->expression()->contains(r) && !e->contains(p->definedReg()))
+            if (p->definesAnyReg() && !e->contains(p->definedReg()))
                 p->substitute(r, e);
         if(regs.hasKey(r)) {
             cerr << "Already define: " << r << io::endl;
@@ -193,17 +218,30 @@ private:
 		if(c != NO_COND) {
 			if(uns)
 				switch(c) {
+                // XXX: ZHEN: i don't know why we replace all signed comparison by unsigned ones
 				case LT:	c = ULT; break;
 				case LE:	c = ULE; break;
 				case GE:	c = UGE; break;
 				case GT:	c = UGT; break;
 				default:	break;
 				}
-			preds.add(Predicate::reg(a, c, Expression::reg(b)));
-			preds.add(Predicate::reg(b, sem::invert(c), Expression::reg(a)));
+            if (c == sem::EQ || c == sem::NE){
+                preds.add(Predicate::reg(a, c, Expression::reg(b)));
+                preds.add(Predicate::reg(b, c, Expression::reg(a)));
+            }
+            else {
+                preds.add(Predicate::reg(a, c, Expression::reg(b)));
+                preds.add(Predicate::reg(b, sem::invert(c), Expression::reg(a)));
+            }
 		}
 	}
-	
+
+    /**
+     * From known predicates on a register, extend them to others
+     * @param r
+     * @param rp
+     * @param f
+     */
 	void extend(int r, int rp, const std::function<Predicate *(int, cond_t, const Expression *)>& f) {
 		Vector<Predicate *> added;
 		for(auto p: preds)
@@ -272,7 +310,7 @@ protected:
 		if(!v->isBasic())
 			return;
 		auto b = v->toBasic();
-		
+
 		// get the bundles (for reverse traversal)
 		Vector<BasicBlock::Bundle> bundles;
 		for(auto bundle: b->bundles())
@@ -285,31 +323,107 @@ protected:
 		for(int i =  bundles.length() - 1; i >= 0; i--) {
 			block.clear();
 			bundles[i].semInsts(block);
+            // XXX To fork, or not to fork, that is a question
+            //block.fork();
 			cerr << "DEBUG: bundle @" << bundles[i].address() << ":\n" << block << io::endl;
 			process(block, states);
 			cerr << "STATES:\n";
 			for(auto s: states)
 				cerr << s << io::endl;
-			
 		}
 		cout << v << io::endl;
 		for(auto s: states)
 			cout << s << io::endl;
 		
 		// convert the states to semantic instructions
+        // first, separate from states, those are taken and those are not taken
+        Vector<State*> taken;
+        Vector<State*> not_taken;
+        for (auto* s: states)
+            if (s->isTakingBranch())
+                taken.add(s);
+            else
+                not_taken.add(s);
+
+        // Generate semantic instructions
+        sem::Block gen_block;
+        // First, generate the two cases: taken and not taken
+        // the address of the end of the body is not known now,
+        // so it has to be backpatched later.
+        gen_block.add(sem::fork(-1));
+
+        // taken case
+        if (taken.count() > 1) {
+            for (auto *s: taken) {
+                // same problem. the destination address is not known, tobe patched later.
+                gen_block.add(sem::fork(-1));
+                // record the address of the fork, to easy the backpatch later
+                int fork_addr = gen_block.count() - 1;
+                // for each predicate in the state (of that path)
+                for (const auto &pred: s->predicates()) {
+                    // generate the sem insts if the pred doesn't define a temp register
+                    // XXX ZHEN: i don't think this would badly impact the precision
+                    if (pred->definedReg()>=0)
+                        pred->gen(gen_block);
+                }
+                // backpatch the fork: nb of generated insts = current count - (fork_addr + 1)
+                gen_block[fork_addr] = sem::fork(gen_block.count() - fork_addr - 1);
+            }
+        }
+        else{ //taken has only one state
+            if (!taken.isEmpty())
+                for (const auto &pred: taken[0]->predicates())
+                    if (pred->definedReg()>=0)
+                        pred->gen(gen_block);
+        }
+
+        // the end of the first branch
+        gen_block.add(sem::stop());
+        // backpatch the address of the fork at the beginning.
+        gen_block[0] = sem::fork(gen_block.count()-1);
+
+        // not taken case, same algo of the taken case
+        if ( not_taken.count() > 1) {
+            for (auto *s: not_taken) {
+                gen_block.add(sem::fork(-1));
+                int fork_addr = gen_block.count() - 1;
+                for (const auto &pred: s->predicates())
+                    if (pred->definedReg()>=0)
+                        pred->gen(gen_block);
+                gen_block[fork_addr] = sem::fork(gen_block.count() - fork_addr - 1);
+            }
+        }
+        else{ // not_taken has only one state
+            if (!not_taken.isEmpty())
+                for (const auto &pred: not_taken[0]->predicates())
+                    if (pred->definedReg()>=0)
+                        pred->gen(gen_block);
+        }
+        gen_block.add(sem::stop());
+
+        // DEBUG: print the generated instructions
+        cerr << "===== GEN =====" << io::endl;
+        for (const auto& inst: gen_block)
+            cerr << inst << io::endl;
+        cerr << "===== END GEN =====" << io::endl;
 	}
-	
+
 	void process(const sem::Block& block, Vector<State *>& states) {
 		sem::Block cur;
 		Vector<State *> init_states = states;
 		Vector<State *> cur_states;
 		
 		// traverse all possibles paths
+        // this pair is used to record (a) the address in the bundle
+        // (b) and the address of the last inst before deviation.
+        // Upon deviation (due to IF or FORK), it takes one path, store the addresses into the stack
+        // then, next iteration, takes another path
 		Vector<Pair<int, int> > stack;	// (PC+jump in block, PC in cur)
 		//stack.push(pair(0, 0));
 		int pc = 0;
+
 		while(true) {
-			
+
 			// build a path
 			for(; pc < block.length() && block[pc].op != sem::STOP; pc++)
 				switch(block[pc].op) {
@@ -353,7 +467,7 @@ protected:
 				cur.setLength(c.snd);
 				if(block[pc].op == sem::IF)
 					cur.add(sem::assume(block[pc].cond(), block[pc].sr()));
-				pc = pc + block[pc].jump();
+				pc = pc + block[pc].jump() + 1;
 			}
 		}
 	
