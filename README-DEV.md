@@ -54,10 +54,11 @@ This is seems quite easy in such a simple example while there are two major prob
 
 #### Backward analysis
 To resolve the first problem, one has to resolve **LOOP_BOUND** i.e. finding out how **LOOP_BOUND** is computed.
-In the small example above, **LOOP_BOUND** is a constant.
+In the small example above, **LOOP_BOUND** is a constant, so it is trivial to be found. However, we may compare for example
+**ri < rj** and **rj** is computed by other registers or constants. Therefore, one has to track down how the **rj** is computed.
+That's why we use backward analysis.
 
-To pass this information to the CLP analysis, we decided to add semantic instruction at the end of the block to express the potential relationship between registers
-I.e. **Ri' = f(R0',... RN')**.
+Finally, we build up a relationship between **Ri'**, i.e. **Ri' = f(R0',... RN')**. And we can generate semantic instructions for them.
 
 To resolve the second problem, the analysis has to record the condition used in the branch instruction (if any), and link the condition to the cmp instruction.
 
@@ -68,12 +69,12 @@ The backward analysis can be described in the state machine? model:
 so we define the analysis by defining separately the state domain **S** and the update function **U: S * inst -> S**.
 ######The state 
 The state records basically four information:
-- The value of registers
-- The value of the memory
+- The value of registers at the end of block with respect to the value of register at current position
+- The value of memory, because they could have alias.
 - The predicates
 - The relationship between condition and the status register
 
-The value of registers and memory is what we discussed previously
+The value of registers is formed like:
 ```
 Ri' = f(R0,R1,...RN,CST)
 ```
@@ -95,31 +96,101 @@ The predicates keep information about the last comparison and the branch (if any
 
 Predicates are all formed as
 ```
-ri* cond f(r-1, ..., rN, CST)
+ri' cond f(r-1, ..., rN, CST)
 ```
-where **ri*** is the value of **ri** at the moment of comparison. The predicates are initialised when a **cmp** is met and keep this information. For example, in the block above, when the **cmp, ri, LOOP_BOUND** is met,
-we know that in the case of branch taken, **ri>LOOP_BOUND** and in the case not taken, **ri<=LOOP_BOUND**.
-
-
 
 The relationship between condition and status register is used to record the condition used in branch before meeting the cmp.
 In the example above, as the analysis directs backward, at the last instruction **bhe**, we know that the condition is **he** without knowing the registers that are being compared.
 This information is known later(in analysis), when we meet the **cmp ri, LOOP_BOUND**.
+
 ###### How to update
-Upon un assignment:
-if a register is assigned:
-```asm
-seti ri,CST
-set ri, rj
-etc.
+Let 
 ```
-For each register state, the **ri** in its **f** is replaced by the expression that is being assigned.
-For example, in the case of **seti**, in the **f** of each register, **ri** is replaced by the constant that is being assigned.
-In the case of **set**, **ri** is replaced by the **f** of **rj**. This can be understood as "if ri'=rj,now rj is computed by f(something), so ri' = f(something)".
-Careful, We should not replace the **f** of **rj** by the expression, but we should substitute the **rj** in the **f** of **rj**.
+S = S_reg x S_mem x S_pred x S_cond
+S_reg = Reg x Expr
+S_mem = Expr x Expr
+S_pred = Reg x Cond x Expr
+S_cond = (cond | Null) x R_sr
+```
 
-ZHEN: i think the code does not substitue the **rj** in the **f** of **rj**, to be fixed.
+
+Any register assignment:
+```pseudo
+U(ASSIGN(rd, expr'), S_reg) = 
+foreach (ri, expr) in S_reg:
+  expr.substitue(rd, expr');
+  
+U(ASSIGN(rd, expr'), S_pred) = 
+foreach (ri, cond, expr) in S_pred:
+  expr.substitue(rd, expr');
+  
+U(ASSIGN(_), S_mem) = Id
+U(ASSIGN(_), S_cond) = Id
+```
+The expression in predicates and register values are replaced by the new expression.
+Such instructions include set, seti, load, any unop or binop.
+
+CMP/BR
+```pseudo
+U(CMP(ra, rb, R_sr), S_reg) = Id;
+U(CMP(ra, rb, R_sr), S_mem) = Id;
+U(CMP(ra, rb, R_sr), S_pred) =
+  if (S_cond.SR ==  R_sr)
+    S_pred = S_pred::
+          Normalise(Predicate(ra, S_cond.cond, rb))::
+          Normalise(Predicate(rb, reverse(S_cond.cond, ra));
+  else
+    Id;
+U(CMP(ra, rb, R_sr), S_cond) =  Id;
 
 
-For each memory state, the **f** is replaced in the same way as the registers state.
+U(BR(cond, SR), S_reg) = Id;
+U(BR(cond, SR), S_mem) = Id;
+U(BR(cond, SR), S_pred) = Id;
+U(BR(cond, SR), S_cond) = (cond, SR);
+```
+Where the function normalise should take a predicate and rewrite the left side (ra) using ri'.
 
+Memory related
+The **load** is considered as register assignment instruction, so it lefts only STORE
+```pseudo
+U(STORE(addr_expr, expr), S_reg) = Id;
+U(STORE(addr_expr, expr), S_pred) = Id;
+U(STORE(addr_expr, expr), S_cond) = Id;
+U(STORE(addr_expr, expr), S_mem) = 
+  S_mem::(addr_expr, expr);
+```
+
+Finally, we obtain a state like :
+```
+Ri' = f(r0,... rN, *(addr1), ...)
+Rj' = f(r0,... rN, *(addr1), ...)
+Rn' <= f(r0,... rN, *(addr1), ...)
+Rm' => f(r0,... rN, *(addr1), ...)
+```
+To build up predicates on Ri', we have to replace ri and *(addr) in the predicates. 
+That means we want to represent Ri with respect to Ri', however figure out their relationship.
+For simple cases like 
+```pseudo
+Ri' = Ri
+Rn' <= Ri
+```
+We can find **Rn' <= Ri'**.
+While in complex situation like
+```pseudo
+Ri' = Rk
+Ri' = Ri 
+Rn' <= Ri
+```
+as we have no information about Ri. we can do nothing about it.
+In case where a ri' appears in several registers, like
+```pseudo
+Rj' = Ri
+Ri' = Ri
+Rn' <= Ri
+```
+We can generate predicates below
+```apseudo
+Rn' <= Ri'
+Rn' <= Rj'
+```
