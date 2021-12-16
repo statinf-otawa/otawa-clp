@@ -32,19 +32,19 @@ using namespace sem;
 
 static sem::cond_t symetric(sem::cond_t c) {
 	switch(c) {
-	case sem::NO_COND:		return c;
-	case sem::EQ:			return c;
-	case sem::LT:			return sem::GT;
-	case sem::LE:			return sem::GE;
-	case sem::GE:			return sem::LE;
-	case sem::GT:			return sem::LT;
-	case sem::ANY_COND:		return c;
-	case sem::NE:			return c;
-	case sem::ULT:			return sem::UGT;
-	case sem::ULE:			return sem::UGE;
-	case sem::UGE:			return sem::ULE;
-	case sem::UGT:			return sem::ULT;
-	default:			ASSERT(false);			
+	case NO_COND:	return c;
+	case EQ:		return c;
+	case LT:		return GT;
+	case LE:		return GE;
+	case GE:		return LE;
+	case GT:		return LT;
+	case ANY_COND:	return c;
+	case NE:		return c;
+	case ULT:		return UGT;
+	case ULE:		return UGE;
+	case UGE:		return ULE;
+	case UGT:		return ULT;
+	default:		ASSERT(false);			
 	}
 }
 	
@@ -57,32 +57,32 @@ public:
 
 class ForwardPredicate {
 public:
-	ForwardPredicate(const Expression *e1, sem::cond_t c, const Expression * e2)
+	ForwardPredicate(const Expression *e1, cond_t c, const Expression * e2)
 		: _c(c), _e1(e1), _e2(e2) { }
 	ForwardPredicate(const ForwardPredicate& p): _c(p._c), _e1(p._e1), _e2(p._e2) {}
-	inline sem::cond_t cond() const { return _c; }
+	inline cond_t cond() const { return _c; }
 	inline const Expression *arg1() const { return _e1; }
 	inline const Expression *arg2() const { return _e2; }
 private:
-	sem::cond_t _c;
+	cond_t _c;
 	const Expression *_e1, *_e2;
 };
 io::Output& operator<<(io::Output& out, ForwardPredicate *p) {
 	out << p->arg1() << ' ';
 	switch(p->cond()) {
-	case sem::NO_COND:		out << "!"; break;
-	case sem::EQ:			out << "="; break;
-	case sem::LT:			out << "<"; break;
-	case sem::LE:			out << "<="; break;
-	case sem::GE:			out << ">"; break;
-	case sem::GT:			out << ">="; break;
-	case sem::ANY_COND:		out << "?"; break;
-	case sem::NE:			out << "!="; break;
-	case sem::ULT:			out << "<+"; break;
-	case sem::ULE:			out << "<=+"; break;
-	case sem::UGE:			out << ">+"; break;
-	case sem::UGT:			out << ">=+"; break;
-	case sem:: MAX_COND:	ASSERT(false);
+	case NO_COND:	out << "!"; break;
+	case EQ:		out << "="; break;
+	case LT:		out << "<"; break;
+	case LE:		out << "<="; break;
+	case GE:		out << ">"; break;
+	case GT:		out << ">="; break;
+	case ANY_COND:	out << "?"; break;
+	case NE:		out << "!="; break;
+	case ULT:		out << "<+"; break;
+	case ULE:		out << "<=+"; break;
+	case UGE:		out << ">+"; break;
+	case UGT:		out << ">=+"; break;
+	case  MAX_COND:	ASSERT(false);
 	}
 	out << ' ' << p->arg2();
 	return out;
@@ -190,14 +190,15 @@ public:
 	void genPreds(sem::Block& b) {
 		
 		// build the reverse map fo registers
-		for(auto p: M.pairs()) {
-			auto l = rmap.get(p.snd, nullptr);
-			if(l == nullptr) {
-				l = new List<int>();
-				rmap.put(p.snd, l);
+		for(auto p: M.pairs())
+			if(p.fst >= 0) {
+				auto l = rmap.get(p.snd, nullptr);
+				if(l == nullptr) {
+					l = new List<int>();
+					rmap.put(p.snd, l);
+				}
+				l->add(p.fst);
 			}
-			l->add(p.fst);
-		}
 		
 		// build the reverse map for memory
 		for(auto p: MM.pairs()) {
@@ -226,13 +227,9 @@ private:
 			auto ll = rmap.get(e1, nullptr);
 			if(ll != nullptr) {
 				auto g2 = forGen(e2);
-				if(g2 != nullptr) {
-					for(auto r: *ll) {
-						g2->gen(b, -1);
-						b.add(sem::cmp(-2, r, -1));
-						b.add(sem::assume(c, -2));
-					}
-				}
+				if(g2 != nullptr)
+					for(auto r: *ll)
+						genRegConstraint(r, c, e2, b);
 			}			
 		}
 		
@@ -244,18 +241,11 @@ private:
 				if(g2 != nullptr) {
 					for(auto a: *ll) {
 						auto g1 = forGen(a->address());
-						if(g1 != nullptr) {
-							const int addr = -1, val = -2, sr = -3;
-							g1->gen(b, addr);
-							b.add(sem::load(val, addr, a->type()));
-							g2->gen(b, sr);
-							b.add(sem::cmp(sr, val, sr));
-							b.add(sem::assume(c, sr));
-							b.add(sem::store(val, addr, a->type()));
-						}
+						if(g1 != nullptr)
+							genMemConstraint(a->type(), g1, c, g2, b);
 					}
 				}
-			}			
+			}
 		}
 		
 		// lookup below if any
@@ -282,9 +272,36 @@ private:
 				}
 			}
 			break;
+		case Expression::MEM:  {
+				auto m = static_cast<const Mem *>(e1);
+				auto ea = forGen(m->address());
+				if(ea != nullptr) {
+					auto e = forGen(e2);
+					if(e != nullptr)
+						genMemConstraint(m->type(), ea, c, e, b);
+				}
+			}
+			break;
 		default:
 			break;
 		}
+	}
+	
+	void genMemConstraint(sem::type_t t, const Expression *a, sem::cond_t c, const Expression *e, sem::Block& b) {
+		const int addr = -1, val = -2, sr = -3;
+		a->gen(b, addr);
+		b.add(sem::load(val, addr, t));
+		e->gen(b, sr);
+		b.add(sem::cmp(sr, val, sr));
+		b.add(sem::assume(c, sr));
+		b.add(sem::store(val, addr, t));		
+	}
+	
+	void genRegConstraint(int r, sem::cond_t c, const Expression *e, sem::Block& b) {
+		const int x = -1, sr = -2;
+		e->gen(b, x);
+		b.add(sem::cmp(sr, r, x));
+		b.add(sem::assume(c, sr));		
 	}
 	
 	const Expression *getReg(int r) {
@@ -314,7 +331,7 @@ private:
 	void setMem(sem::type_t t, int a, const Expression *e) {
 
 		// record the memory map
-		auto ae = man.makeMem(man.makeReg(a), t);
+		auto ae = man.makeMem(getReg(a), t);
 		MM.put(ae, e);
 		
 		// fix the other memory references
@@ -414,7 +431,9 @@ inline io::Output& operator<<(io::Output& out, ForwardState *s) { s->print(out);
 class ForwardPredicateBuilder: public BBProcessor, public FilterMaker {
 public:
 	static p::declare reg;
-	ForwardPredicateBuilder(): BBProcessor(reg), _max(0) { }
+	ForwardPredicateBuilder(): BBProcessor(reg), _max(0) {
+		EMPTY.add(sem::stop());
+	}
 
 	static sem::Block EMPTY;
 	
@@ -486,6 +505,7 @@ protected:
 				if(lf[i] >= 0)
 					(*bs[i])[lf[i]] = sem::nop();
 				bs[i]->add(sem::stop());
+				updateMax(*bs[i]);
 			}
 		}
 		_map.put(v, pair(bs[0], bs[1]));
@@ -528,6 +548,61 @@ protected:
 				}
 			}
 		}
+	}
+	
+	void updateMax(sem::Block& b) {
+		for(const auto& i: b)
+			switch(i.op) {
+				case NOP:
+				case TRAP:
+				case STOP:
+				case FORK:
+				case BRANCH:
+					break;
+				case IF:
+					_max = max(_max, -i.sr());
+					break;					
+				case LOAD:
+				case STORE:
+					_max = max(_max, -i.reg());
+					_max = max(_max, -i.addr());
+					break;
+				case SCRATCH:
+				case SETI:
+				case SETP:
+				case ASSUME:
+					_max = max(_max, -i.d());
+					break;
+				case SET:
+				case NEG:
+				case NOT:
+					_max = max(_max, -i.d());
+					_max = max(_max, -i.a());
+					break;
+				case CMP:
+				case CMPU:
+				case ADD:
+				case SUB:
+				case SHL:
+				case SHR:
+				case ASR:
+				case AND:
+				case OR:
+				case XOR:
+				case MUL:
+				case MULU:
+				case DIV:
+				case DIVU:
+				case MOD:
+				case MODU:
+				case MULH:
+				case JOIN:
+				case MEET:
+					_max = max(_max, -i.d());
+					_max = max(_max, -i.a());
+					_max = max(_max, -i.b());
+					break;				
+			}
 	}
 	
 private:

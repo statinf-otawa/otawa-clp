@@ -85,7 +85,7 @@ const  Expression* Const::substitute(int r, const Expression* e) const {
 void Const::gen(sem::Block& b, int t) const { b.add(sem::seti(t, k)); }
 
 ///
-void Const::print(io::Output& out, int pri) const { out << k; }
+void Const::print(io::Output& out, int pri) const { out << t::int32(k); }
 
 ///
 bool Const::equals(const Expression* e) const {
@@ -318,9 +318,9 @@ const Expression* Dyadic::substitute(int r, const Expression* e)const {
 
 ///
 void Dyadic::gen(sem::Block& b, int t) const {
-	a2->gen(b, t);
-	a2->gen(b, t + 1);
-	b.add(sem::inst(o, t, t, t + 1));
+	a1->gen(b, t);
+	a2->gen(b, t - 1);
+	b.add(sem::inst(o, t, t, t - 1));
 }
 
 ///
