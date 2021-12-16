@@ -35,11 +35,11 @@ public:
 	static int compare(const Expression * e1, const Expression * e2) { return e1->compare(e2); }
 };
 
-class State {
+class BackwardState {
 public:
 	
-	State(): br(false) {}
-    ~State(){
+	BackwardState(pred::ExpressionManager& _man): br(false), man(_man) {}
+    ~BackwardState(){
         for (auto x:regs)
             delete &(*x);
         for (auto& x:mem.pairs()) {
@@ -48,8 +48,8 @@ public:
         }
     };
 
-	State *copy() const {
-		auto s = new State();
+	BackwardState *copy() const {
+		auto s = new BackwardState(man);
 		for(const auto& r: regs.pairs())
 			s->regs.put(r.fst, r.snd);
 		for(const auto& m: mem.pairs())
@@ -68,36 +68,36 @@ public:
 			br = true;
 			break;
 		case SETI:
-			replace(i.d(), Expression::cst(i.cst()));
+			replace(i.d(), man.makeCst(i.cst()));
 			break;
 		case SET:
-			replace(i.d(), Expression::reg(i.a()));
+			replace(i.d(), man.makeReg(i.a()));
 			extend(i.d(), i.a(), [](int r, cond_t c, const Expression * e)
 				{ return Predicate::reg(r, c, e); });
 			break;
 		case NEG:
-			replace(i.d(), Expression::op(NEG, Expression::reg(i.a())));
+			replace(i.d(), man.makeOp(NEG, man.makeReg(i.a())));
 			extend(i.d(), i.a(), [](int r, cond_t c, const Expression * e)
 				{ return Predicate::reg(r, invert(c), e); });
 			break;
 		case NOT:
-			replace(i.d(), Expression::op(NOT, Expression::reg(i.a())));
+			replace(i.d(), man.makeOp(NOT, man.makeReg(i.a())));
 			break;
 		case ADD:
-			replace(i.d(), Expression::op(ADD,
-				Expression::reg(i.a()), Expression::reg(i.b())));
-			extend(i.d(), i.a(), [i](int r, cond_t c, const Expression * e)
-				{ return Predicate::reg(r, c, Expression::op(SUB, e, Expression::reg(i.b()))); });
-			extend(i.d(), i.b(), [i](int r, cond_t c, const Expression * e)
-				{ return Predicate::reg(r, c, Expression::op(SUB, e, Expression::reg(i.a()))); });
+			replace(i.d(), man.makeOp(ADD,
+				man.makeReg(i.a()), man.makeReg(i.b())));
+			extend(i.d(), i.a(), [i, this](int r, cond_t c, const Expression * e)
+				{ return Predicate::reg(r, c, man.makeOp(SUB, e, man.makeReg(i.b()))); });
+			extend(i.d(), i.b(), [i, this](int r, cond_t c, const Expression * e)
+				{ return Predicate::reg(r, c, man.makeOp(SUB, e, man.makeReg(i.a()))); });
 			break;
 		case SUB:
-			replace(i.d(), Expression::op(SUB,
-				Expression::reg(i.a()), Expression::reg(i.b())));
-			extend(i.d(), i.a(), [i](int r, cond_t c, const Expression * e)
-				{ return Predicate::reg(r, c, Expression::op(ADD, e, Expression::reg(i.b()))); });
-			extend(i.d(), i.b(), [i](int r, cond_t c, const Expression * e)
-				{ return Predicate::reg(r, invert(c), Expression::op(SUB, Expression::reg(i.a()), e)); });
+			replace(i.d(), man.makeOp(SUB,
+				man.makeReg(i.a()), man.makeReg(i.b())));
+			extend(i.d(), i.a(), [i, this](int r, cond_t c, const Expression * e)
+				{ return Predicate::reg(r, c, man.makeOp(ADD, e, man.makeReg(i.b()))); });
+			extend(i.d(), i.b(), [i, this](int r, cond_t c, const Expression * e)
+				{ return Predicate::reg(r, invert(c), man.makeOp(SUB, man.makeReg(i.a()), e)); });
 			break;
 		case SHL:
 		case SHR:
@@ -112,13 +112,13 @@ public:
 		case MOD:
 		case MODU:
 		case MULH:
-			replace(i.d(), Expression::op(opcode(i.op),
-				Expression::reg(i.a()), Expression::reg(i.b())));
+			replace(i.d(), man.makeOp(opcode(i.op),
+				man.makeReg(i.a()), man.makeReg(i.b())));
 			break;
 		case LOAD:
-			replace(i.d(), Expression::mem(Expression::reg(i.a()), i.type()));
-			extend(i.d(), -1, [i](int r, cond_t c, const Expression * e)
-				{ return Predicate::mem(Expression::reg(i.b()), i.type(), c, e); });
+			replace(i.d(), man.makeMem(man.makeReg(i.a()), i.type()));
+			extend(i.d(), -1, [i, this](int r, cond_t c, const Expression * e)
+				{ return Predicate::mem(man.makeReg(i.b()), i.type(), c, e); });
 			break;
 		case ASSUME:
 			sr.put(i.sr(), i.cond());
@@ -133,7 +133,7 @@ public:
 			break;
 		case NOP:
 		case STORE:
-			replace(i.d(), Expression::mem(Expression::reg(i.a()), i.type()));
+			replace(i.d(), man.makeMem(man.makeReg(i.a()), i.type()));
 			store(i.d(), i.a(), i.type());
 			break;
 		case TRAP:
@@ -202,14 +202,14 @@ private:
             if (p->definesAnyReg() && !e->contains(p->definedReg()))
                 p->substitute(r, e);
         if(regs.hasKey(r)) {
-            cerr << "Already define: " << r << io::endl;
+            //cerr << "Already define: " << r << io::endl;
         }
         else {
             regs.put(r, e);
-            if (r >= 0)
+            /*if (r >= 0)
                 cerr << "Putting: R" << r << "': " << e << io::endl;
             else
-                cerr << "Putting: T" << -r << "': " << e << io::endl;
+                cerr << "Putting: T" << -r << "': " << e << io::endl;*/
         }
     }
 
@@ -226,12 +226,12 @@ private:
 				default:	break;
 				}
             if (c == sem::EQ || c == sem::NE){
-                preds.add(Predicate::reg(a, c, Expression::reg(b)));
-                preds.add(Predicate::reg(b, c, Expression::reg(a)));
+                preds.add(Predicate::reg(a, c, man.makeReg(b)));
+                preds.add(Predicate::reg(b, c, man.makeReg(a)));
             }
             else {
-                preds.add(Predicate::reg(a, c, Expression::reg(b)));
-                preds.add(Predicate::reg(b, sem::invert(c), Expression::reg(a)));
+                preds.add(Predicate::reg(a, c, man.makeReg(b)));
+                preds.add(Predicate::reg(b, sem::invert(c), man.makeReg(a)));
             }
 		}
 	}
@@ -251,9 +251,9 @@ private:
 	}
 	
 	void store(int r, int a, sem::type_t t) {
-		auto addr = Expression::mem(Expression::reg(a), t);
+		auto addr = man.makeMem(man.makeReg(a), t);
 		if(!mem.hasKey(addr))
-			mem.put(addr, Expression::reg(r));
+			mem.put(addr, man.makeReg(r));
 	}
 	
 	ListMap<int, const Expression *> regs;
@@ -261,9 +261,10 @@ private:
 	ListMap<int, sem::cond_t> sr;
 	Vector<Predicate *> preds;
 	bool br;
+	ExpressionManager& man;
 };
 
-inline io::Output& operator<<(io::Output& out, State *s) { s->print(out); return out; }
+inline io::Output& operator<<(io::Output& out, BackwardState *s) { s->print(out); return out; }
 
 
 /**
@@ -271,7 +272,7 @@ inline io::Output& operator<<(io::Output& out, State *s) { s->print(out); return
  * precision based on BB predicate building.
  * @ingroup pred
  */
-class FilterMaker {
+/*class FilterMaker {
 public:
 	virtual const sem::Block& takenFilter(otawa::Block *v) = 0;
 	virtual const sem::Block& notTakenFilter(otawa::Block *v) = 0;
@@ -279,7 +280,7 @@ public:
 };
 
 extern p::interfaced_feature<FilterMaker> FILTER_FEATURE;
-
+*/
 class BackwardPredicateBuilder: public BBProcessor, public FilterMaker {
 public:
 	static p::declare reg;
@@ -298,6 +299,10 @@ public:
 	int maxTemp() override { return _max; }
 
 protected:
+	
+	void setup(WorkSpace *ws) override {
+		man = new ExpressionManager;
+	}
 	
 	void destroy(WorkSpace *ws) override {
 		for(const auto& p: _map) {
@@ -318,8 +323,8 @@ protected:
 		
 		// build the states
 		sem::Block block;
-		Vector<State *> states;
-		states.add(new State());
+		Vector<BackwardState *> states;
+		states.add(new BackwardState(*man));
 		for(int i =  bundles.length() - 1; i >= 0; i--) {
 			block.clear();
 			bundles[i].semInsts(block);
@@ -337,8 +342,8 @@ protected:
 		
 		// convert the states to semantic instructions
         // first, separate from states, those are taken and those are not taken
-        Vector<State*> taken;
-        Vector<State*> not_taken;
+        Vector<BackwardState*> taken;
+        Vector<BackwardState*> not_taken;
         for (auto* s: states)
             if (s->isTakingBranch())
                 taken.add(s);
@@ -408,10 +413,10 @@ protected:
         cerr << "===== END GEN =====" << io::endl;
 	}
 
-	void process(const sem::Block& block, Vector<State *>& states) {
+	void process(const sem::Block& block, Vector<BackwardState *>& states) {
 		sem::Block cur;
-		Vector<State *> init_states = states;
-		Vector<State *> cur_states;
+		Vector<BackwardState *> init_states = states;
+		Vector<BackwardState *> cur_states;
 		
 		// traverse all possibles paths
         // this pair is used to record (a) the address in the bundle
@@ -477,6 +482,7 @@ private:
 	typedef Pair<sem::Block *, sem::Block *> pair_t;
 	HashMap<otawa::Block *, pair_t> _map;
 	int _max;
+	ExpressionManager *man;
 };
 
 
@@ -499,6 +505,6 @@ p::declare BackwardPredicateBuilder::reg = p::init("", Version(2, 0, 0))
  * **Default implementation:** BackwardPredicateBuilder
  * @ingroup clp
  */
-p::interfaced_feature<FilterMaker> FILTER_FEATURE("otawa::clp::FILTER_FEATURE", p::make<BackwardPredicateBuilder>());
+//p::interfaced_feature<FilterMaker> FILTER_FEATURE("otawa::clp::FILTER_FEATURE", p::make<BackwardPredicateBuilder>());
 
 }} // otawa::pred

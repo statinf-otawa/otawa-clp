@@ -12,6 +12,7 @@ set(SOURCES
 		"clp_Domain.cpp"
 		"sem_predicates.cpp"
 		"sem_BackwardPredicateBuilder.cpp"
+		"sem_ForwardPredicateBuilder.cpp"
 		"OwnershipPtr.h"
 		)
 
