@@ -1,10 +1,10 @@
 /.cproject
 /.project
 /.pydevproject
-/CMakeFiles/
+CMakeFiles/
 /CMakeCache.txt
 /Makefile
-/cmake_install.cmake
+cmake_install.cmake
 /clp.so
 /install_manifest.txt
 /autodoc
@@ -18,3 +18,7 @@
 /test/ref/
 Makefile
 test_value
+*.json
+*.dis
+log.txt
+*-otawa

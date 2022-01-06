@@ -92,7 +92,7 @@ Domain::Domain(Process *proc):
 {
 	proc->semInit(b);
 	cs = init;
-	update(BOTH);
+	update(BOTH, false);
 	OTAWA_CLP_CHECK(
 		State::EMPTY.lock();
 		State::FULL.lock();
@@ -369,8 +369,9 @@ void Domain::doStore(State& state, const sem::inst& i) {
 /**
  * Update the current state with the given sequence of semantic instruction.
  * @param select	Select which kind of path to look for.
+ * @param filter	Filtering mode (supports comparison with temporary).
  */
-void Domain::update(branch_t select) {
+void Domain::update(branch_t select, bool filter) {
 	if(cs == &State::EMPTY)
 		return;
 	fs = &State::EMPTY;
@@ -401,10 +402,9 @@ void Domain::update(branch_t select) {
 		// perform the instruction
 		const sem::inst& i = b[pc];
 		switch(i.op) {
-			
-		case sem::IF:
-		case sem::FORK:
-			stack->push(pc + i.jump(), branch, new State(*cs));
+
+		case sem::CONT:
+			pc = b.length();
 			break;
 
 		case sem::BRANCH:
@@ -412,14 +412,39 @@ void Domain::update(branch_t select) {
 			branch = true;
 			break;
 
-		case sem::CONT:
-			pc = b.length();
+		case sem::CMP:
+			if(filter && (i.a() >= 0 && i.b() >= 0))
+				set(*cs, i.d(), Value::compare(i.a(), i.b()));
+			else
+				set(*cs, i.d(), Value::top);
+			break;
+			
+		case sem::CMPU:
+			if(filter && (i.a() >= 0 && i.b() >= 0))
+				set(*cs, i.d(), Value::compare(i.a(), i.b(), true));
+			else
+				set(*cs, i.d(), Value::top);
+			break;
+
+		case sem::ASSUME:
+			doAssume(*cs, i);
+			break;
+		
+		case sem::FORK:
+			stack->push(pc + i.jump(), branch, new State(*cs));
+			break;
+			
+		case sem::IF: {
+				auto ns = new State(*cs);
+				doAssume(*ns, sem::assume(sem::invert(i.cond()), i.sr()));
+				stack->push(pc + i.jump(), branch, ns);
+			}
+			doAssume(*cs, sem::assume(i.cond(), i.sr()));
 			break;
 
 		case sem::NOP:
-		case sem::ASSUME:
 			break;
-		
+			
 		case sem::LOAD:
 			doLoad(*cs, i);
 			break;
@@ -428,8 +453,6 @@ void Domain::update(branch_t select) {
 			break;
 
 		case sem::SETP:
-		case sem::CMP:
-		case sem::CMPU:
 		case sem::SCRATCH:
 			set(*cs, i.d(), Value::all);
 			break;
@@ -512,12 +535,54 @@ void Domain::update(branch_t select) {
 }
 
 
+/**
+ * Implements the ASSUME instruction.
+ * @param s		State to update.
+ * @param i		Assume instruction.
+ */
+void Domain::doAssume(State& s, const sem::inst& i) {
+	auto x = get(s, i.sr());
+	
+	// get the compared values
+	if(!x.isComp())
+		return;
+	auto r1 = x.r1();
+	auto r2 = x.r2();
+	auto x1 = get(s, r1);
+	auto x2 = get(s, r2);
+	
+	// fix unsigned if required
+	auto c = i.cond();
+	if(x.uns())
+		c = sem::unsignedCond(c);
+		 
+	// perform the comparison
+	switch(i.cond()) {
+	case sem::EQ:	x1.eq(x2); x2.eq(x1); break;
+	case sem::NE:	x1.ne(x2); x2.ne(x1); break;
+	case sem::LT:	x1.lt(x2); x2.ge(x1); break;
+	case sem::LE:	x1.le(x2); x2.gt(x1); break;
+	case sem::GT:	x1.gt(x2); x2.le(x1); break;
+	case sem::GE:	x1.ge(x2); x2.lt(x1); break;
+	case sem::ULT:	x1.ltu(x2); x2.geu(x1); break;
+	case sem::ULE:	x1.leu(x2); x2.gtu(x1); break;
+	case sem::UGT:	x1.gtu(x2); x2.leu(x1); break;
+	case sem::UGE:	x1.geu(x2); x2.ltu(x1); break;
+	default:		break;
+	}
+	
+	// store the result
+	set(s, r1, x1);
+	set(s, r2, x2);
+}
+
+
 ///
 ai::State *Domain::update(Edge *e, ai::State *_s) {
 	return _s;
 }
 
-
+///
 ai::State *Domain::update(Block *v, ai::State *_s) {
 	if(!v->isBasic())
 		return _s;
@@ -553,7 +618,7 @@ ai::State *Domain::update(Block *v, ai::State *_s) {
 		b.clear();
 		bu.semInsts(b);
 		currentInst = bu.first();
-		update(BOTH);
+		update(BOTH, false);
 		if(cs == &State::EMPTY)
 			break;
 	}
@@ -573,7 +638,7 @@ State *Domain::update(const BaseBundle<BasicBlock::InstIter>& bu, State *s, bran
 	b.clear();
 	bu.semInsts(b);
 	currentInst = bu.first();
-	update(BOTH);
+	update(BOTH, false);
 	return cs;
 }
 
@@ -593,7 +658,7 @@ State *Domain::update(Inst *inst, int sem, State *s, branch_t select) {
 	currentInst = inst;
 	b[sem] = sem::cont();
 	b.setLength(sem + 1);
-	update(BOTH);
+	update(BOTH, false);
 	return cs;	
 }
 

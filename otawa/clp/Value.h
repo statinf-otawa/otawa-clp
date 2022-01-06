@@ -42,8 +42,9 @@ const intn_t MINn = elm::type_info<intn_t>::min;
 
 typedef enum {
 	NONE,
-	REG,
 	VAL,
+	REG,
+	CMP,
 	ALL
 } kind_t;
 
@@ -57,17 +58,24 @@ public:
 		_kind(VAL), _base(val), _delta(0), _mtimes(0) {}
 	inline static Value R(int n) { return Value(REG, n); }
 	inline static Value addr(uintn_t base, intn_t delta = 0, uintn_t mtimes = 0) { return Value(VAL, base, delta, mtimes); }
-
+	inline static Value compare(int r1, int r2, bool uns = false)
+		{ return Value(CMP, r1, r2, uns); }
+	
 	// accessors
-	inline kind_t kind(void) const { return _kind; }
-	inline intn_t delta(void) const { return _delta; }
+	inline kind_t kind() const { return _kind; }
+	inline intn_t delta() const { return _delta; }
 	inline intn_t base() const { return _base; }
-	inline uintn_t mtimes(void) const { return _mtimes; }
+	inline uintn_t mtimes() const { return _mtimes; }
+	inline int r1() const { return _base; }
+	inline int r2() const { return _delta; }
+	inline bool uns() const { return _mtimes; }
 
 	inline bool isTop() const { return _kind == ALL; }
 	inline bool isBot() const { return _kind == NONE; }
-	inline bool isConst(void) const { return delta() == 0 || mtimes() == 0; }
-	inline bool isInf(void) const { return (_mtimes == UMAXn); }
+	inline bool isConst() const { return delta() == 0 || mtimes() == 0; }
+	inline bool isInf() const { return (_mtimes == UMAXn); }
+	inline bool isComp() const { return _kind == CMP; }
+	inline bool isValue() const { return _kind == VAL; }
 
 	inline intn_t lower(void) const { return _base; }
 	inline intn_t upper(void) const { return _base + _delta * _mtimes; }
@@ -77,7 +85,11 @@ public:
 		{ if (_delta < 0) return upper(); else return _base; }
 	inline intn_t stop(void) const
 		{ if (_delta < 0) return _base; else return upper(); }
-
+	inline uintn_t ustart() const
+		{ uintn_t l = lower(), u = upper(); if(l < u) return l; else return u;  }
+	inline uintn_t ustop() const
+		{ uintn_t l = lower(), u = upper(); if(l > u) return l; else return u;  }
+		
 	// semantic operations
 	Value& add(const Value& val);
 	void sub(const Value& val);
@@ -92,12 +104,16 @@ public:
 	Value& _and(const Value& val);
 
 	// comparisons
-	Value& ge(intn_t k);
-	Value& geu(uintn_t k);
-	Value& le(intn_t k);
-	Value& leu(uintn_t k);
-	void eq(uintn_t k);
-	void ne(uintn_t k);
+	Value& eq(const Value &x);
+	Value& ne(const Value& x);
+	Value& lt(const Value& x);
+	Value& le(const Value& x);
+	Value& gt(const Value& x);
+	Value& ge(const Value& x);
+	Value& ltu(const Value& x);
+	Value& leu(const Value& x);
+	Value& gtu(const Value& x);
+	Value& geu(const Value& x);
 
 	// AI operations
 	bool subsetOf(const Value& val) const;
@@ -133,6 +149,13 @@ public:
 		_mtimes = mtimes;
 		check();
 	}
+	inline void set(const Value& x) {
+		_kind = x._kind;
+		_base = x._base;
+		_delta = x._delta;
+		_mtimes = x._mtimes;
+		check();
+	}
 	void print(io::Output& out) const;
 
 	inline bool swrap(void) const
@@ -147,6 +170,10 @@ private:
 	inline void check(void) { /*ASSERT((_delta == 0 && _mtimes == 0) || (_delta != 0 && _mtimes != 0));*/ }
 	void PQValue(Value &p, Value &q);
 	void reverse(void);
+	void less_or_equal(intn_t k);
+	void greater_or_equal(intn_t k);
+	void unsigned_less_or_equal(uintn_t k);
+	void unsigned_greater_or_equal(uintn_t k);
 
 	kind_t _kind;
 	intn_t _base;

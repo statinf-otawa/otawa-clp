@@ -74,9 +74,10 @@ public:
 private:
 	
 	void set(clp::State& state, int i, const clp::Value& v);
-	void update(branch_t select);
+	void update(branch_t select, bool filter);
 	void doLoad(State& s, const sem::inst& i);
 	void doStore(State& s, const sem::inst& i);
+	void doAssume(State& s, const sem::inst& i);
 	
 	sem::Block b;
 	Inst *currentInst;

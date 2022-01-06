@@ -520,7 +520,7 @@ void State::print(io::Output& out, const hard::Platform *pf) const {
 		// registers
 		for(int i = 0; i < registers.length(); i++){
 			Value val = registers[i];
-			if (val.kind() == VAL) {
+			if (val.kind() != ALL) {
 				if(!fst)
 					out << ", ";
 				else

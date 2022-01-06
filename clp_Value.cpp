@@ -51,6 +51,12 @@ static const int ARITHMETIC_THRESHOLD = 1024;
  * This is the Top element.
  */
 
+/**
+ * @var CMP
+ * This represents the result of a comparison. _base is the number of the first
+ * compared register. _delta is the number of the second compared register.
+ */
+
 
 /**
  * Return positive GCD of two unsigned integers.
@@ -248,7 +254,7 @@ bool Value::subsetOf(const Value& x) const {
 Value& Value::mulh(const Value& val){
 	if (_kind == NONE && val._kind == NONE) 	/* NONE + NONE = NONE */
 		*this = none;
-	else if (_kind == ALL || val._kind == ALL) 	/* ALL + anything = ALL */
+	else if (_kind != VAL || val._kind != VAL) 	/* ALL + anything = ALL */
 		*this = all;
 	else if (_delta == 0 && val._delta == 0) {	/* two constants */
 		t::uint64 result = _base;
@@ -270,7 +276,7 @@ Value& Value::mulh(const Value& val){
 Value& Value::mul(const Value& val){
 	if (_kind == NONE && val._kind == NONE) 	/* NONE + NONE = NONE */
 		*this = none;
-	else if (_kind == ALL || val._kind == ALL) 	/* ALL + anything = ALL */
+	else if (_kind != VAL || val._kind != VAL) 	/* ALL + anything = ALL */
 		*this = all;
 	else if (_delta == 0 && val._delta == 0) {	/* two constants */
 		t::uint64 result = _base;
@@ -313,7 +319,7 @@ Value& Value::mul(const Value& val){
 Value& Value::div(const Value& val){
 	if (_kind == NONE && val._kind == NONE) 	/* NONE + NONE = NONE */
 		return *this = none;
-	else if (_kind == ALL || val._kind == ALL) 	/* ALL + anything = ALL */
+	else if (_kind != VAL || val._kind != VAL) 	/* ALL + anything = ALL */
 		return *this = all;
 	else if(isConst() && val.isConst())
 		return *this = Value(VAL, _base / val._base);
@@ -348,7 +354,7 @@ Value& Value::div(const Value& val){
 Value& Value::mod(const Value& val){
 	if (_kind == NONE && val._kind == NONE)
 		return *this = none;
-	else if (val._kind == ALL)
+	else if (val._kind != VAL || _kind == CMP)
 		return *this = all;
 	else if (val.isConst()) {
 		if(_mtimes < ARITHMETIC_THRESHOLD) {
@@ -381,7 +387,7 @@ Value& Value::mod(const Value& val){
 Value& Value::add(const Value& val){
 	if (_kind == NONE && val._kind == NONE) 	/* NONE + NONE = NONE */
 		*this = none;
-	else if (_kind == ALL || val._kind == ALL) 	/* ALL + anything = ALL */
+	else if (_kind != VAL || val._kind != VAL) 	/* ALL + anything = ALL */
 		*this = all;
 	else if (_delta == 0 && val._delta == 0) 	/* two constants */
 		set(_kind, _base + val._base, 0, 0);
@@ -440,7 +446,7 @@ Value& Value::add(const Value& val){
 void Value::sub(const Value& val) {
 	if (_kind == NONE && val._kind == NONE)		/* NONE - NONE = NONE */
 		*this = none;
-	else if (_kind == ALL || val._kind == ALL)	/* ALL - anything = ALL */
+	else if (_kind != VAL || val._kind != VAL)	/* ALL - anything = ALL */
 		*this = all;
 	else if (_delta == 0 && val._delta == 0)	/* two constants */
 		set(_kind, _base - val._base, 0, 0);
@@ -462,6 +468,8 @@ void Value::print(io::Output& out) const {
 		out << 'T';
 	else if (_kind == NONE)
 		out << '_';
+	else if(_kind == CMP)
+		out << "r" << _base << " ~ r" << _delta;
 	else if ((_delta == 0) && (_mtimes ==  0))
 		out << "k(0x" << io::hex(_base) << ')';
 		//out << "k(" << _lower << ')';
@@ -491,9 +499,11 @@ void Value::print(io::Output& out) const {
  *				constant.
 */
 void Value::shl(const Value& val) {
-	if(!val.isConst() || val._base < 0){
-		set(ALL, 0, 1, UMAXn);
-	} else if (_kind != NONE && _kind != ALL) {
+	if(_kind == NONE && val._kind == NONE)
+		*this = bot;
+	if(!val.isConst() || val._base < 0 || _kind != VAL || val._kind != VAL)
+		set(top);
+	else {
 		if (_delta == 0 && _mtimes == 0) {
 			// set(VAL, _base << val._base, 0, 0);
 			long a = _base;
@@ -511,7 +521,7 @@ void Value::shl(const Value& val) {
  *				constant.
  */
 Value& Value::shr(const Value& val) {
-	if(!val.isConst() || val._base < 0){
+	if(!val.isConst() || val._base < 0 || _kind != VAL || val._kind != VAL){
 		set(ALL, 0, 1, UMAXn);
 	} else
 	if (_kind != NONE && _kind != ALL) {
@@ -559,7 +569,7 @@ Value& Value::shr(const Value& val) {
  *				constant.
  */
 Value& Value::asr(const Value& val) {
-	if((_kind == ALL) || !val.isConst() || val._base < 0){
+	if(_kind != ALL || val._kind != VAL || !val.isConst() || val._base < 0){
 		set(ALL, 0, 1, UMAXn);
 		return *this;
 	}
@@ -585,9 +595,9 @@ Value& Value::asr(const Value& val) {
  * @param val	The value to OR with the current one.
  */
 void Value::_or(const Value& val) {
-	if(_kind == ALL  || val.kind() == NONE)
+	if(_kind != VAL)
 		return;
-	if(val.kind() == ALL || _kind == NONE) {
+	if(val.kind() != VAL) {
 		*this = val;
 		return;
 	}
@@ -623,9 +633,9 @@ void Value::_or(const Value& val) {
  * @param val the value to be joined with
  */
 Value& Value::join(const Value& val) {
-	if ((*this) == val)							/* A U A = A (nothing to do) */
+	if((*this) == val)							/* A U A = A (nothing to do) */
 		return *this;
-	else if (_kind == ALL || val._kind == ALL)  /* ALL U anything = ALL */
+	else if (_kind != VAL || val._kind != VAL)  /* ALL U anything = ALL */
 		set(ALL, 0, 1, UMAXn);
 	else if (_kind == NONE)						/* NONE U A = A */
 		set(VAL, val._base, val._delta, val._mtimes);
@@ -778,7 +788,7 @@ Value& Value::ffwidening(const Value& x, int N){
 		return *this;
 
 	// (1)	⊤ ▽ x = x ▽ ⊤ = x
-	else if(kind() == ALL || x.kind() == ALL)
+	else if(kind() != VAL || x.kind() != VAL)
 		*this = all;
 
 	// (2) x ▽ x = x
@@ -843,6 +853,10 @@ Value& Value::inter(const Value& val) {
 	}
 	else if(val.isTop())
 		return *this;
+	else if(_kind != VAL || val._kind != VAL) {
+		*this = top;
+		return *this;
+	}
 
 	// 2.2. cst n cst
 	if(isConst() && val.isConst()){
@@ -1012,41 +1026,40 @@ Value& Value::inter(const Value& val) {
  * the opposite of delta as new delta).
 */
 void Value::reverse(void){
-	/*if(!isConst()) {
-		uintn_t dist = (uintn_t)abs(start() - stop());
-		set(clp::VAL, stop(), -delta(), dist / delta());
-	}*/
-	set(clp::VAL, _base + _delta * _mtimes, -_delta, _mtimes);
+	if(_kind == VAL)
+		set(clp::VAL, _base + _delta * _mtimes, -_delta, _mtimes);
 }
 
 
 /**
  * Filter the current value with signed values greater than k.
- * @param k		Threshold.
+ * @param k		Pivot value.
  */
-Value& Value::ge(intn_t k) {
+void Value::greater_or_equal(intn_t k) {
 
 	// all cases
 	if(*this == all) {
 		*this = Value(VAL, k, 1, MAXn-k);
-		return *this;
+		return;
 	}
 
-	// none cases
-	if(*this == none)
-		return *this;
+	// except value
+	if(_kind != VAL) {
+		*this = top;
+		return;
+	}
 
 	// case of constant
 	if(isConst()) {
 		if(k > _base)
 			*this = none;
-		return *this;
+		return;
 	}
 
 	// d >= 0 => inter((b, d, n), (k, 1, inf+ - k)
 	if(_delta > 0) {
 		inter(Value(VAL, k, 1, MAXn - k));
-		return *this;
+		return;
 	}
 
 	// d < 0 !!!
@@ -1057,18 +1070,62 @@ Value& Value::ge(intn_t k) {
 	// b <= k -> _
 	if(_base <= k) {
 		*this = none;
-		return *this;
+		return;
 	}
 
 	// b + dn >= k -> (b, d, n)
 	if(_base + _delta * intn_t(_mtimes) >= k)
-		return *this;
+		return;
 
 	// _ -> (b, d, (k - b) / d
 	else
 		_mtimes = (k - _base) / _delta;
 
 	check();
+	return;
+}
+
+
+/**
+ * Filter the current value with signed values greater or equal than x.
+ * @param x		Compared value.
+ */
+Value& Value::ge(const Value& x) {
+
+	// non case for x
+	if(x.isBot()) {
+		*this = bot;
+		return *this;
+	}
+	
+	// non-value or signed wrapping
+	if(!x.isValue() || x.swrap())
+		return *this;
+	
+	// compute
+	greater_or_equal(x.start());
+	return *this;
+}
+
+
+/**
+ * Filter the current value with signed values stricly greater than x.
+ * @param x		Compared value.
+ */
+Value& Value::gt(const Value& x) {
+
+	// non case for x
+	if(x.isBot()) {
+		*this = bot;
+		return *this;
+	}
+	
+	// non-value or signed wrapping
+	if(!x.isValue() || x.swrap())
+		return *this;
+	
+	// compute
+	greater_or_equal(x.start() + 1);
 	return *this;
 }
 
@@ -1099,10 +1156,14 @@ Value& Value::ge(intn_t k) {
  * Filter the current value with signed values lesser than k.
  * @param k		Threshold.
  */
-Value& Value::le(intn_t k) {
-
+void Value::less_or_equal(intn_t k) {
+	
+	// non-value cases
+	if(_kind == NONE)
+		return;
+	
 	// make the value from ALL to [k, -inf]
-	if(*this == all) {
+	else if(_kind != VAL) {
 		// first obtain the difference between k and -inf (MINn), use a 64 bit value to prevent overflow
 		t::int64 m = k;
 		m = m - MINn;
@@ -1110,26 +1171,23 @@ Value& Value::le(intn_t k) {
 		// since we have ALL, there is no way to know the direction, so we make it positive d = 1
 		temp.reverse();
 		*this = temp;
-		return *this;
+		return;
 	}
 
-	// simple cases
-	if(*this == none)
-	//if(*this == all || *this == none)
-		return *this;
+	// const case
 	if(isConst()) {
 		if(k < _base)
 			*this = none;
-		return *this;
+		return;
 	}
 
 	// simple cases
 	if(*this == all || *this == none)
-		return *this;
+		return;
 	if(isConst()) {
 		if(k < _base)
 			*this = none;
-		return *this;
+		return;
 	}
 
 	// not so simple
@@ -1147,7 +1205,7 @@ Value& Value::le(intn_t k) {
 		if(start() > k)		// case a: if the min-possible value is larger than filter, than nothing will left
 			*this = none;
 		else if(stop() < k)	// case c: if the max-possible value if smaller than the filter, than all can pass
-			return *this;
+			return;
 		else {				// case b: start <= k && stop >= k
 			if(_delta >= 0) {
 				_mtimes = (k - _base) / _delta;
@@ -1163,6 +1221,50 @@ Value& Value::le(intn_t k) {
 	}
 
 	check();
+}
+
+
+
+/**
+ * Filter the current value with signed values lesser or equal than x.
+ * @param x		Value to filter with.
+ */
+Value& Value::le(const Value& x) {
+
+	// non case for x
+	if(x.isBot()) {
+		*this = bot;
+		return *this;
+	}
+	
+	// non-value or signed wrapping
+	if(!x.isValue() || x.swrap())
+		return *this;
+	
+	// get the pivot value
+	less_or_equal(x.stop());
+	return *this;
+}
+
+
+/**
+ * Filter the current value with signed values strictly lesser than x.
+ * @param x		Value to filter with.
+ */
+Value& Value::lt(const Value& x) {
+
+	// non case for x
+	if(x.isBot()) {
+		*this = bot;
+		return *this;
+	}
+	
+	// non-value or signed wrapping
+	if(!x.isValue() || x.swrap())
+		return *this;
+	
+	// get the pivot value
+	less_or_equal(x.stop() - 1);
 	return *this;
 }
 
@@ -1171,23 +1273,25 @@ Value& Value::le(intn_t k) {
  * Filter the current value with unsigned values greater than k.
  * @param k		Threshold.
  */
-Value& Value::geu(uintn_t k) {
+void Value::unsigned_greater_or_equal(uintn_t k) {
 
-	// all case
-	if(*this == all) {
+	// non-value cases
+	if(_kind == NONE)
+		return;
+	else if(_kind != VAL) {
 		*this = Value(VAL, k, 1, UMAXn-k);
-		return *this;
+		return;
 	}
 
 	// none cases
 	if(*this == none)
-		return *this;
+		return;
 
 	// case of constant
 	if(isConst()) {
 		if(k > uintn_t(_base))
 			*this = none;
-		return *this;
+		return;
 	}
 
 	if(_delta > 0) {
@@ -1201,12 +1305,12 @@ Value& Value::geu(uintn_t k) {
 		v = v + _base;
 		if(v < k) { // means the whole CLP is less than k
 			*this = none;
-			return *this;
+			return;
 		}
 		// find the new mtimes
 		uintn_t new_mtimes = (v - new_base) / _delta;
 		*this = Value(VAL, new_base, _delta, new_mtimes);
-		return *this;
+		return;
 	}
 	else {
 		reverse();
@@ -1220,15 +1324,57 @@ Value& Value::geu(uintn_t k) {
 		v = v + _base;
 		if(v < k) { // means the whole CLP is less than k
 			*this = none;
-			return *this;
+			return;
 		}
 		// find the new mtimes
 		uintn_t new_mtimes = (v - new_base) / _delta;
 		*this = Value(VAL, new_base, _delta, new_mtimes);
 		reverse();
+		return;
+	}
+}
+
+
+/**
+ * Filter the current value with unsigned values greater or equal than x.
+ * @param x		Value to filter with.
+ */
+Value& Value::geu(const Value& x) {
+
+	// non case for x
+	if(x.isBot()) {
+		*this = bot;
 		return *this;
 	}
-	check();
+	
+	// non-value or signed wrapping
+	if(!x.isValue() || x.uwrap())
+		return *this;
+	
+	// get the pivot value
+	unsigned_greater_or_equal(x.ustart());
+	return *this;
+}
+
+
+/**
+ * Filter the current value with unsigned values greater or equal than x.
+ * @param x		Value to filter with.
+ */
+Value& Value::gtu(const Value& x) {
+
+	// non case for x
+	if(x.isBot()) {
+		*this = bot;
+		return *this;
+	}
+	
+	// non-value or signed wrapping
+	if(!x.isValue() || x.uwrap())
+		return *this;
+	
+	// get the pivot value
+	unsigned_greater_or_equal(x.ustart() + 1);
 	return *this;
 }
 
@@ -1237,29 +1383,29 @@ Value& Value::geu(uintn_t k) {
  * Filter the current value with unsigned values lesser than k.
  * @param k		Threshold.
  */
-Value& Value::leu(uintn_t k) {
-
-	// for un-signed case, ALL will be filtered to [0, k]
-	if(*this == all) {
-		*this = Value(VAL, 0, 1, k);
-		return *this;
-	}
+void Value::unsigned_less_or_equal(uintn_t k) {
 
 	// nothing to filter will be nothing still
 	if(*this == none)
-		return *this;
+		return;
+
+	// for un-signed case, ALL will be filtered to [0, k]
+	if(_kind != VAL) {
+		*this = Value(VAL, 0, 1, k);
+		return;
+	}
 
 	// case of constant
 	if(isConst()) {
 		if(k < uintn_t(_base))
 			*this = none;
-		return *this;
+		return;
 	}
 
 	// d < 0 => inter((b, d, n), (k, 1, inf+ - k)
 	if(_delta < 0) {
 		inter(Value(VAL, 0, 1, k));
-		return *this;
+		return;
 	}
 
 	// d > 0 !!!
@@ -1277,33 +1423,105 @@ Value& Value::leu(uintn_t k) {
 		_base = newbase;
 		// calculate the new mtimes
 		_mtimes = (k - uintn_t(_base)) / _delta;
-		return *this;
+		return;
 	}
 
 	// b >= k -> _
 	if(uintn_t(_base) >= k) {
 		*this = none;
-		return *this;
+		return;
 	}
 
 	// b + dn >= k -> (b, d, n)
 	if(uintn_t(_base + _delta * _mtimes) <= k)
-		return *this;
+		return;
 
 	// _ -> (b, d, (k - b) / d
 	else
 		_mtimes = (k - uintn_t(_base)) / _delta;
 
 	check();
+}
+
+
+/**
+ * Filter the current value with unsigned values less or equal than x.
+ * @param x		Value fo filter with.
+ */
+Value& Value::leu(const Value& x) {
+
+	// non case for x
+	if(x.isBot()) {
+		*this = bot;
+		return *this;
+	}
+	
+	// non-value or signed wrapping
+	if(!x.isValue() || x.uwrap())
+		return *this;
+	
+	// filter
+	unsigned_less_or_equal(x.ustop());
 	return *this;
 }
 
 
-void Value::eq(uintn_t k) {
+/**
+ * Filter the current value with unsigned values stricly less than x.
+ * @param x		Value fo filter with.
+ */
+Value& Value::ltu(const Value& x) {
+
+	// non case for x
+	if(x.isBot()) {
+		*this = bot;
+		return *this;
+	}
+	
+	// non-value or signed wrapping
+	if(!x.isValue() || x.uwrap())
+		return *this;
+	
+	// filter
+	unsigned_less_or_equal(x.ustop() - 1);
+	return *this;
 }
 
-void Value::ne(uintn_t k) {
+
+/**
+ * Filter the value to b equal to x.
+ */
+Value& Value::eq(const Value& x) {
+	if(isBot())
+		;
+	else if(x.isBot()) {
+		*this = bot;
+		return *this;
+	}
+	else if(x.isConst() && (isTop() || x.subsetOf(*this)))
+		*this = x;
+	else
+		*this = top;
+	return *this;
 }
+
+/**
+ * Filter the value to be not equal to k.
+ */
+Value& Value::ne(const Value& x) {
+	if(isBot())
+		;
+	else if(x.isBot()) {
+		*this = bot;
+		return *this;
+	}
+	else if(x.isConst() && isConst() && base() == x.base())
+		*this = none;
+	else if(x.isComp() || isComp())
+		*this = top;
+	return *this;
+}
+
 
 /**
  * Threshold giving the maximum size of a CLP set
@@ -1319,14 +1537,20 @@ int Value::and_threshold = 8;
 Value& Value::_and(const Value& val) {
 
 	// if both of them are all, return all
-	if((*this == all) && (val == all))
+	if(isTop() && val.isTop())
 		return *this;
 
 	// _ & v = v & _ = _
-	if(*this == none)
+	if(isBot())
 		return *this;
-	if(val == none) {
-		*this = none;
+	if(val.isBot()) {
+		*this = bot;
+		return *this;
+	}
+	
+	// condition case
+	if(isComp() || val.isComp()) {
+		*this = top;
 		return *this;
 	}
 
@@ -1544,5 +1768,5 @@ const Value Value::none(NONE), Value::all(ALL, 0, 1, UMAXn);
  * Represents the $\top$ value.
  */
 const Value Value::bot(NONE), Value::top(ALL, 0, 1, UMAXn);
-	
+
 } }	// otawa::clp

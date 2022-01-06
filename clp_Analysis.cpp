@@ -29,6 +29,7 @@
 #include <otawa/ipet/features.h>
 #include <otawa/ai/CFGAnalyzer.h>
 #include <otawa/ai/FlowAwareRanking.h>
+#include <otawa/pred/predicates.h>
 
 #include "otawa/clp/Domain.h"
 
@@ -98,21 +99,34 @@ Manager::~Manager() { }
 
 /**
  * Implements CLP analysis.
+ *
+ * **Provided Features*
+ * * @ref otawa::clp::ANALYSIS_FEATURE
+ * 
+ * **required Features**
+ * * @ref otawa::COLLECTED_CFG_FEATURE
+ * * @ref otawa::LOOP_INFO_FEATURE
+ * * @ref otawa::dfa::INITIAL_STATE_FEATURE
+ * * @ref otawa::hard::MEMORY_FEATURE
+ * * @ref otawa::ipet::FLOW_FACTS_FEATURE
+ * * @ref otawa::ai::CFG_RANKING_FEATURE
+ * 
+ * ** Optional Used Feature**
+ * * @ref otawa::pred::FILTER_FEATURE
+ * 
  */
 class Analysis: public BBProcessor, public Manager {
 public:
 
 	static p::declare reg;
 	
-	Analysis(p::declare& r = reg): BBProcessor(reg), trace(false) { }
+	Analysis(p::declare& r = reg):
+		BBProcessor(reg),
+		trace(false),
+		filter(nullptr)
+		{ }
 	
 	
-#	if 0
-	typedef Pair<const hard::Register *, Address> init_t;
-	/** Initial state of the analysis */
-	static Identifier<init_t> INITIAL;
-#	endif
-
 	void *interfaceFor(const AbstractFeature& f) override {
 		if(f == ANALYSIS_FEATURE)
 			return static_cast<Manager *>(this);
@@ -241,6 +255,10 @@ protected:
 					warn("no value for the initial stack pointer");
 			}
 		}
+		
+		// Is there a filter maker?
+		if(ws->provides(pred::FILTER_FEATURE))
+			filter = pred::FILTER_FEATURE.get(ws);
 	
 	}
 
@@ -255,9 +273,10 @@ protected:
 	
 	void dumpBB(Block *v, io::Output& out) override {
 		domain->print(ana->after(v), out);
+		out << io::endl;
 	}
 	
-	void processWorkSpace(WorkSpace *ws) override {
+	void processAll(WorkSpace *ws) override {
 		ana = new ai::CFGAnalyzer(*this, *domain);
 		
 		// if required, prepare trace
@@ -295,6 +314,7 @@ private:
 	ai::CFGAnalyzer *ana;
 	bool trace;
 	List<ObservedState *> ostates;
+	pred::FilterMaker *filter;
 };
 
 ///

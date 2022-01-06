@@ -605,6 +605,24 @@ protected:
 			}
 	}
 	
+	void dumpBB(otawa::Block *v, io::Output &out) override {
+		if(!v->isBasic())
+			return;
+		auto p = _map.get(v);
+		if(!p)
+			return;
+		if((*p).fst != &EMPTY) {
+			out << "not-taken\n";
+			for(int i = 0; i < (*p).fst->length(); i++)
+				out << "\t" << (*(*p).fst)[i] << io::endl;
+		}
+		if((*p).snd != &EMPTY) {
+			out << "not-taken\n";
+			for(int i = 0; i < (*p).snd->length(); i++)
+				out << "\t" << (*(*p).snd)[i] << io::endl;
+		}
+	}
+	
 private:
 	typedef Pair<sem::Block *, sem::Block *> pair_t;
 	HashMap<otawa::Block *, pair_t> _map;
@@ -619,7 +637,7 @@ sem::Block ForwardPredicateBuilder::EMPTY;
 
 /**
  */
-p::declare ForwardPredicateBuilder::reg = p::init("otawa::clp::ForwardPedicateBuilder", Version(2, 0, 0))
+p::declare ForwardPredicateBuilder::reg = p::init("otawa::clp::ForwardPredicateBuilder", Version(2, 0, 0))
 	.extend<BBProcessor>()
 	.provide(FILTER_FEATURE)
 	.make<ForwardPredicateBuilder>();
