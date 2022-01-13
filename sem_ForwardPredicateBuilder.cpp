@@ -428,7 +428,7 @@ private:
 inline io::Output& operator<<(io::Output& out, ForwardState *s) { s->print(out); return out; }
 
 
-class ForwardPredicateBuilder: public BBProcessor, public FilterMaker {
+class ForwardPredicateBuilder: public BBProcessor, public FilterInfo {
 public:
 	static p::declare reg;
 	ForwardPredicateBuilder(): BBProcessor(reg), _max(0) {
@@ -446,6 +446,14 @@ public:
 	}
 
 	int maxTemp() override { return _max; }
+
+	
+	void *interfaceFor(const AbstractFeature &feature) override {
+		if(&feature == &FILTER_FEATURE)
+			return static_cast<FilterInfo *>(this);
+		else
+			return Processor::interfaceFor(feature);
+	}
 
 protected:
 	
@@ -649,6 +657,6 @@ p::declare ForwardPredicateBuilder::reg = p::init("otawa::clp::ForwardPredicateB
  * **Default implementation:** BackwardPredicateBuilder
  * @ingroup clp
  */
-p::interfaced_feature<FilterMaker> FILTER_FEATURE("otawa::clp::FILTER_FEATURE", p::make<ForwardPredicateBuilder>());
+p::interfaced_feature<FilterInfo> FILTER_FEATURE("otawa::clp::FILTER_FEATURE", p::make<ForwardPredicateBuilder>());
 
 }} // otawa::pred

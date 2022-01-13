@@ -66,17 +66,16 @@ public:
 	inline intn_t delta() const { return _delta; }
 	inline intn_t base() const { return _base; }
 	inline uintn_t mtimes() const { return _mtimes; }
-	inline int r1() const { return _base; }
-	inline int r2() const { return _delta; }
-	inline bool uns() const { return _mtimes; }
-
 	inline bool isTop() const { return _kind == ALL; }
+	inline bool isAll() const { return _kind == ALL; }
 	inline bool isBot() const { return _kind == NONE; }
+	inline bool isNone() const { return _kind == NONE; }
 	inline bool isConst() const { return delta() == 0 || mtimes() == 0; }
 	inline bool isInf() const { return (_mtimes == UMAXn); }
 	inline bool isComp() const { return _kind == CMP; }
 	inline bool isValue() const { return _kind == VAL; }
 
+	// value accessors
 	inline intn_t lower(void) const { return _base; }
 	inline intn_t upper(void) const { return _base + _delta * _mtimes; }
 	inline bool direction(void) const { return (delta() > 0); }
@@ -89,7 +88,12 @@ public:
 		{ uintn_t l = lower(), u = upper(); if(l < u) return l; else return u;  }
 	inline uintn_t ustop() const
 		{ uintn_t l = lower(), u = upper(); if(l > u) return l; else return u;  }
-		
+
+	// compare accessors
+	inline int r1() const { return _base; }
+	inline int r2() const { return _delta; }
+	inline bool uns() const { return _mtimes; }
+
 	// semantic operations
 	Value& add(const Value& val);
 	void sub(const Value& val);

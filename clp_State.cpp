@@ -33,23 +33,22 @@ namespace otawa { namespace clp {
 
 /**
  * Constructors of a new State.
- * @param def	Initial value (optional).
+ * @param tmpcnt	Number of temporaries.
+ * @param def		Initial value (optional).
  */
-State::State(const Value& def): first(0, def) {
-	OTAWA_CLP_CHECK(locked = false;)
+State::State(int tmpcnt, const Value& def)
+: base(tmpcnt), first(0, def), linked(tmpcnt) {
 }
 
 
 /** Copy constructor */
-State::State(const State& state): first(0, Value::all){
-	OTAWA_CLP_CHECK(locked = false;)	
+State::State(const State& state): base(state.base), first(0, Value::none) {
 	copy(state);
 }
 
 
 ///
 State::~State(void) {
-	OTAWA_CLP_CHECK(locked = false;)	
 	clear();
 }
 
@@ -59,10 +58,10 @@ State::~State(void) {
  * @param state the state to be copied
 */
 void State::copy(const State& state) {
-	OTAWA_CLP_CHECK(ASSERT(!locked));
 	clear();
 
 	// memory
+	base = state.base;
 	first = state.first;
 	for(Node *prev = &first, *cur = state.first.next; cur; cur = cur->next) {
 		prev->next = new Node(cur);
@@ -70,19 +69,21 @@ void State::copy(const State& state) {
 	}
 
 	// registers
-	registers.copy(state.registers);
-	tmpreg.copy(state.tmpreg);
+	regs = state.regs;
+	srs = state.srs;
+	linked.resize(state.linked.size());
+	linked = state.linked;
 }
+
 
 /**
  * Remove all nodes from the state
 */
 void State::clear(void) {
-	OTAWA_CLP_CHECK(ASSERT(!locked));
 
 	// registers
-	registers.clear();
-	tmpreg.clear();
+	regs.setLength(base);
+	srs.clear();
 
 	// memory
 	for(Node *cur = first.next, *next; cur; cur = next) {
@@ -99,7 +100,6 @@ void State::clear(void) {
  * @param size	Size of the area.
  */
 void State::clear(t::uint32 base, t::uint32 size) {
-	OTAWA_CLP_CHECK(ASSERT(!locked));
 	if(first.val == Value::none)
 		return;
 	for(Node *prev = &first, *cur = first.getNext(), *next; cur; cur = next) {
@@ -115,52 +115,92 @@ void State::clear(t::uint32 base, t::uint32 size) {
 	}
 }
 
+
 /**
- * Define a value into a register or the memory
- * @param addr a value of kind REG for a register, VAL for the memory.
- *		  The value must be a constant (only the lower() attribute will be
- *		  used) or all.
- * @param val the value to store at the given address
-*/
-void State::set(const Value& addr, const Value& val) {
-	OTAWA_CLP_CHECK(ASSERT(!locked));
+ * Repair the mask of registers linked by status registers.
+ */
+void State::repairSR(int r) {
+	for(List<int>::PrecIter i(srs); i(); i++)
+		if(regs[*i].r1() == r || regs[*i].r2() == r) {
+			regs[*i] = Value::all;
+			srs.remove(i);
+			if(!i())
+				break;
+		}
+}
+
+
+/**
+ * Repair the list of status registers (and of linked mask).
+ */
+void State::rebuildSR() {
+	srs.clear();
+	linked.clear();
+	for(int i = 0; i < regs.length(); i++)
+		if(regs[i].isComp()) {
+			srs.add(i);
+			linked.set(regs[i].r1() + base);
+			linked.set(regs[i].r2() + base);
+		}
+}
+
+
+/**
+ * Assign the value x to the register which number is i.
+ * @param r		Register index (negative for temporary).
+ * @param x		Assigned value.
+ */
+void State::setReg(int r, const Value& x) {
+	if(first.val == Value::none)
+		return;
+	int i = r + base;
+	
+	// enlarge if required
+	if(i >= regs.length()) {
+		linked.resize(i + 1);
+		while(regs.length() <= i) {
+			linked.clear(regs.length());
+			regs.add(Value::all);
+		}
+	}
+	
+	// old value is in a comparison
+	if(linked[i]) {
+		linked.clear(i);
+		repairSR(r);
+	}
+		
+	// perform the assignment
+	regs[i] = x;
+
+	// a comparison: update linked and srs
+	if(x.isComp()) {
+		srs.add(i);
+		linked.set(x.r1() + base);
+		linked.set(x.r2() + base);
+	}
+}
+
+
+/**
+ * Assign the value x to the address a in memory.
+ * @param a		Address to assign to.
+ * @param x		Assigned value.
+ */
+void State::store(const Value& a, const Value& x) {
 	Node *prev, *cur, *next;
 	if(first.val == Value::none)
 		return;
 
 	// insert a none in the state (put the state to none)
-	if (val == Value::none){
+	if(x.isNone()){
 		clear();
 		first.val = Value::none;
 		return;
 	}
 
-	// assign to register
-	if(addr.kind() == REG) {
-		if (addr.lower() < 0){
-			// temp ones
-			if (-addr.lower() < tmpreg.length())
-				tmpreg.set(-addr.lower(), val);
-			else {
-				for(int i = tmpreg.length(); i < -addr.lower(); i++)
-					tmpreg.add(Value::all);
-				tmpreg.add(val);
-			}
-		} else {
-			// real ones
-			if (addr.lower() < registers.length())
-				registers.set(addr.lower(), val);
-			else {
-				for(int i = registers.length(); i < addr.lower(); i++)
-					registers.add(Value::all);
-				registers.add(val);
-			}
-		}
-		return;
-	}
-
-	// consume all memory references
-	if(addr == Value::all) {
+	// assert to T
+	if(a.isAll()) {
 		prev = &first;
 		cur = first.next;
 		while(cur) {
@@ -172,13 +212,13 @@ void State::set(const Value& addr, const Value& val) {
 		return;
 	}
 
-	else if(!addr.isConst()) {
-		prev = &first;
+	// assign to an address range
+	else if(!a.isConst()) {
 		cur = first.next;
-		for(prev = &first, cur = first.next; cur && cur->addr < uintn_t(addr.lower()); prev = cur, cur = cur->next);
-
-
-		for( ; cur && cur->addr <= uintn_t(addr.upper()); ) {
+		for(prev = &first, cur = first.next;
+			cur != nullptr && cur->addr < uintn_t(a.lower());
+			prev = cur, cur = cur->next);
+		while(cur != nullptr && cur->addr <= uintn_t(a.upper())) {
 			prev->next = cur->next;
 			Node* toDelte = cur;
 			cur = cur->next;
@@ -186,19 +226,21 @@ void State::set(const Value& addr, const Value& val) {
 		}
 	}
 
-	// find a value
+	// assign to a single address
 	else {
-		for(prev = &first, cur = first.next; cur && cur->addr < uintn_t(addr.lower()); prev = cur, cur = cur->next);
-		if(cur && cur->addr == uintn_t(addr.lower())) { // find the exact match
-			if(val.kind() != ALL)
-				cur->val = val;
+		for(prev = &first, cur = first.next;
+			cur != nullptr && cur->addr < uintn_t(a.lower());
+			prev = cur, cur = cur->next);
+		if(cur != nullptr && cur->addr == uintn_t(a.lower())) {
+			if(x.kind() != ALL)
+				cur->val = x;
 			else {
 				prev->next = cur->next;
 				delete cur;
 			}
 		}
-		else if(val.kind() != ALL) { // if not, insert the memory node
-			next = new Node(addr.lower(), val);
+		else if(x.kind() != ALL) {
+			next = new Node(a.lower(), x);
 			prev->next = next;
 			prev->next->next = cur;
 		}
@@ -211,20 +253,26 @@ void State::set(const Value& addr, const Value& val) {
 */
 bool State::equals(const State& state) const {
 
-	// Registers
-	if (registers.length() != state.registers.length())
-		return false;
-
-	for (int i=0; i < registers.length(); i++)
-		if (registers[i] != state.registers[i])
+	// check registers
+	int m = min(regs.length(), state.regs.length());
+	for(int i = 0; i < m; i++)
+		if(regs[i] != state.regs[i])
 			return false;
+	if(regs.length() > m)
+		for(int i = m; i < regs.length(); i++) {
+			if(!regs[i].isAll())
+				return false;
+		}
+	else if(state.regs.length() > m)
+		for(int i = m; i < state.regs.length(); i++)
+			if(!state.regs[i].isAll())
+				return false;
 
-	// Memory
+	// check memory
 	if(first.val.kind() != state.first.val.kind())
 		return false;
-
 	Node *cur = first.next, *cur2 = state.first.next;
-	while(cur && cur2) {
+	while(cur != nullptr && cur2 != nullptr) {
 		if(cur->addr != cur2->addr)
 			return false;
 		if(cur->val != cur2->val)
@@ -245,51 +293,35 @@ bool State::equals(const State& state) const {
 bool State::subsetOf(const State& s) const {
 	if(first.val.kind() == NONE)
 		return true;
-	else if(s.first.val.kind() == NONE) {
-		OTAWA_CLP_CHECK(cerr << "DEBUG: s2 empty!" << io::endl;)
+	else if(s.first.val.kind() == NONE)
 		return false;
-	}
 
 	// registers
-	if (registers.length() > s.registers.length()) {
-		OTAWA_CLP_CHECK(cerr << "DEBUG: too many registers in s2" << io::endl);
-		return false;
-	}
-	for (int i=0; i < registers.length(); i++)
-		if(!registers[i].subsetOf(s.registers[i])) {
-			OTAWA_CLP_CHECK(cerr << "DEBUG: fail on R" << i << io::endl;)
+	int m = min(regs.length(), s.regs.length());
+	for(int i = base; i < m; i++)
+		if(!regs[i].subsetOf(s.regs[i]))
 			return false;
-		}
-
+	if(m < s.regs.length())
+		for(int i = m; i  < s.regs.length(); i++)
+			if(!s.regs[i].isAll())
+				return false;
+		
 	// memory
-	if(first.val.kind() != s.first.val.kind()) {
-		OTAWA_CLP_CHECK(cerr << "DEBUG: bad memory base" << io::endl;)
-		return false;
-	}
-
 	Node *cur = first.next, *cur2 = s.first.next;
 	while(cur && cur2) {
 		if(cur->addr != cur2->addr) {
 			if(cur->addr < cur2->addr)
 				cur = cur->next;
-			else {
-				OTAWA_CLP_CHECK(cerr << "DEBUG: at " << io::hex(cur->addr) << io::endl);
+			else
 				return false;
-			}
 		}
-		else if(!cur->val.subsetOf(cur2->val)) {
-			OTAWA_CLP_CHECK(cerr << "DEBUG: at " << io::hex(cur->addr) << io::endl);
+		else if(!cur->val.subsetOf(cur2->val))
 			return false;
-		}
 		else {
 			cur = cur->next;
 			cur2 = cur2->next;
 		}
 	}
-	OTAWA_CLP_CHECK(
-		if(cur2 != nullptr)
-			cerr << "DEBUG: s2 contains mem item not in s1" << io::endl;
-	);
 	return cur2 == nullptr;
 }
 
@@ -298,7 +330,6 @@ bool State::subsetOf(const State& s) const {
  * Merge a state with the current one.
 */
 void State::join(const State& state) {
-	OTAWA_CLP_CHECK(ASSERT(!locked));
 
 	// test none states
 	if(state.first.val == Value::none)
@@ -309,20 +340,13 @@ void State::join(const State& state) {
 	}
 
 	// registers
-	for(int i=0; i<registers.length() && i<state.registers.length() ; i++)
-		registers[i].join(state.registers[i]);
-	if (registers.length() < state.registers.length())
-		for(int i=registers.length(); i < state.registers.length(); i++)
-			registers.add(state.registers[i]);
-	// temp registers
-#	ifdef JOIN_TEMP_REGISTERS
-	for(int i=0; i<tmpreg.length() && i<state.tmpreg.length() ; i++)
-		tmpreg[i].join(state.tmpreg[i]);
-	if (tmpreg.length() < state.tmpreg.length())
-		for(int i=tmpreg.length(); i < state.tmpreg.length(); i++)
-			tmpreg.add(state.tmpreg[i]);
-#	endif
-
+	int m = min(regs.length(), state.regs.length());
+	for(int i = base; i < m; i++)
+		regs[i].join(state.regs[i]);
+	for(int i = m; i < state.regs.length(); i++)
+		regs.add(state.regs[i]);
+	rebuildSR();
+	
 	// memory
 	Node *prev = &first, *cur = first.next, *cur2 = state.first.next, *next;
 	while(cur && cur2) {
@@ -363,6 +387,7 @@ void State::join(const State& state) {
 	}
 }
 
+
 /**
  * Perform a widening.
  * @param state the state of the next iteration
@@ -370,7 +395,6 @@ void State::join(const State& state) {
  *        operation will be used if the loopBound is known (>=0) or not.
 */
 void State::widening(const State& state, int loopBound) {
-	OTAWA_CLP_CHECK(ASSERT(!locked));
 
 	// test none states
 	if(state.first.val == Value::none)
@@ -381,18 +405,15 @@ void State::widening(const State& state, int loopBound) {
 	}
 
 	// registers
-	for(int i=0; i<registers.length() && i<state.registers.length() ; i++)
-		if (loopBound >= 0)
-			registers[i].ffwidening(state.registers[i], loopBound);
-		else
-			registers[i].widening(state.registers[i]);
-
-	if (registers.length() < state.registers.length())
-		for(int i=registers.length(); i < state.registers.length(); i++) {
-			registers.add(state.registers[i]);
-			//registers.add(clp::Value::top);
-		}
-
+	int m = min(regs.length(), state.regs.length());
+	if (loopBound >= 0)
+		for(int i = base; i < m; i++)
+			regs[i].ffwidening(state.regs[i], loopBound);
+	else
+		for(int i = base; i < m; i++)
+			regs[i].widening(state.regs[i]);
+	rebuildSR();
+		
 	// memory
 	Node *prev = &first, *cur = first.next, *cur2 = state.first.next, *next;
 	while(cur && cur2) {
@@ -436,7 +457,6 @@ void State::widening(const State& state, int loopBound) {
 
 ///
 void State::augment(const State& state) {
-	OTAWA_CLP_CHECK(ASSERT(!locked));
 
 	// nothing to augment
 	if(state.first.val == Value::none)
@@ -448,28 +468,19 @@ void State::augment(const State& state) {
 	}
 
 	// registers
-	for(int i=0; i<registers.length() && i<state.registers.length() ; i++) {
-		if((registers[i] != clp::Value::all) && (state.registers[i] != clp::Value::all))
-			registers[i].join(state.registers[i]);
-		else if (registers[i] == clp::Value::all)
-			registers[i] = state.registers[i];
-		else if (state.registers[i] == clp::Value::all)
-			{}
-		else
-			registers[i].join(state.registers[i]);
+	int m = min(regs.length(), state.regs.length());
+	for(int i = base; i < m; i++) {
+		if(regs[i] != Value::all && state.regs[i] != Value::all)
+			regs[i].join(state.regs[i]);
+		else if(regs[i] == Value::all)
+			regs[i] = state.regs[i];
+		else if (state.regs[i] != Value::all)
+			regs[i].join(state.regs[i]);
 	}
 
-	if (registers.length() < state.registers.length())
-		for(int i=registers.length(); i < state.registers.length(); i++)
-			registers.add(state.registers[i]);
-	// temp registers
-#	ifdef JOIN_TEMP_REGISTERS
-	for(int i=0; i<tmpreg.length() && i<state.tmpreg.length() ; i++)
-		tmpreg[i].join(state.tmpreg[i]);
-	if (tmpreg.length() < state.tmpreg.length())
-		for(int i=tmpreg.length(); i < state.tmpreg.length(); i++)
-			tmpreg.add(state.tmpreg[i]);
-#	endif
+	if (m < state.regs.length())
+		for(int i = m; i < state.regs.length(); i++)
+			regs.add(state.regs[i]);
 
 	// memory
 	Node *cur = first.next, *cur2 = state.first.next; // *prev = &first,
@@ -495,40 +506,29 @@ void State::augment(const State& state) {
 
 
 /**
- * Print the state, the printing does not include the newline at the end
+ * Print the state.
+ * @param out	Output stream.
+ * @param pf	Current platform.
 */
 void State::print(io::Output& out, const hard::Platform *pf) const {
 	if(first.val == Value::none)
-		out << "None (bottom)";
+		out << "{ none }";
 	else {
-		#ifdef STATE_MULTILINE
-			#define CLP_START "\t"
-			#define CLP_END "\n"
-			//out << "{\n";
-		#else
-			#define CLP_START ""
-			#define CLP_END ", "
-			out << "{";
-		#endif
-		// tmp registers
-		/*for(int i = 0; i < tmpreg.length(); i++){
-			Value val = tmpreg[i];
-			if (val.kind() == VAL)
-				out << CLP_START << "t" << i << " = " << val << CLP_END;
-		}*/
+		out << "{ ";
 		bool fst = true;
+		
 		// registers
-		for(int i = 0; i < registers.length(); i++){
-			Value val = registers[i];
-			if (val.kind() != ALL) {
+		for(int i = base; i < regs.length(); i++){
+			auto val = regs[i];
+			if(val.kind() != ALL) {
 				if(!fst)
 					out << ", ";
 				else
 					fst = false;
 				if(!pf)
-					out << "r" << i;
+					out << "r" << (i - base);
 				else
-					out << pf->findReg(i)->name();
+					out << pf->findReg(i - base)->name();
 				out << " = " << val;
 			}
 		}
@@ -539,30 +539,32 @@ void State::print(io::Output& out, const hard::Platform *pf) const {
 				out << ", ";
 			else
 				fst = false;
-			out << CLP_START << Address(cur->addr);
-			out << " = " << cur->val;
+			out << Address(cur->addr) << " = " << cur->val;
 		}
 
+		// SR/linked print
 #		if 0
-		// temp register, not in state
-		for(int i = 0; i < tmpreg.length(); i++){
-			Value val = tmpreg[i];
-			if (val.kind() == VAL) {
-				if(!fst)
-					out << ", ";
-				else
-					fst = false;
-				out << "t" << i;
-				out << " = " << val;
-			}
-		}
+			if(!fst)
+				out << ", ";
+			out << "SR [";
+			for(auto s: srs)
+				out << (s < base ? 't' : 'r') << ::abs(s - base) << ' ';
+			out << "], L=[";
+			for(int i = 0; i < linked.size(); i++)
+				if(linked[i])
+					out << (i < base ? 't' : 'r') << ::abs(i - base) << ' ';
+			out << "]";
+			out << " }";
 #		endif
-		#ifndef STATE_MULTILINE
-		out << "}";
-		#endif
 	}
 }
 
+
+/**
+ * Output the state to structured output (JSON-like output).
+ * @param out	Structured output.
+ * @param pf	Current platform.
+ */
 void State::print(io::StructuredOutput& out, const hard::Platform *pf) const {
 	out.beginMap();
 	out.key("bottom");
@@ -572,8 +574,8 @@ void State::print(io::StructuredOutput& out, const hard::Platform *pf) const {
 		// print registers
 		out.key("regs");
 		out.beginMap();
-		for(int i = 0; i < registers.length(); i++){
-			Value val = registers[i];
+		for(int i = base; i < regs.length(); i++){
+			auto val = regs[i];
 			if (val.kind() == VAL) {
 				if(pf != nullptr)
 					out.key(_ << 'R' << i);
@@ -598,38 +600,33 @@ void State::print(io::StructuredOutput& out, const hard::Platform *pf) const {
 
 
 /**
- * Return a stored value
- * @param addr is the addresse to get the value of. The kind of the value
- *        can be REG for a register, or VAL for memory. The address is
- *        considered as constant, the lower() attribute is the value.
- * @return the stored value
-*/
-const Value& State::get(const Value& addr) const {
-	Node * cur;
-	ASSERTP(addr.isConst(), "addr = " << addr << " is not a constant of the kind " << addr.kind()); // we assume that addr is a constant...
-	if(addr.kind() == REG){
-		// Tmp Registers
-		if (addr.lower() < 0)
-			if ((-addr.lower()) < tmpreg.length())
-				return tmpreg[-addr.lower()];
-			else
-				return Value::all;
-		// Real registers
-		else if (addr.lower() < registers.length())
-			return registers[addr.lower()];
-		else
-			return Value::all;
-	} else {
-		// Memory
-		for(cur = first.next; cur && cur->addr < uintn_t(addr.lower()); cur = cur->next)
-				;
-		if(cur && cur->addr == uintn_t(addr.lower()))
-			return cur->val;
-		return first.val;
-	}
+ * Get a register value.
+ * @param r		Register number.
+ * @return		REegister value.
+ */
+const Value& State::getReg(int r) const {
+	int i = r + base;
+	if(i > regs.length())
+		return Value::all;
+	else
+		return regs[i];
 }
 
-State State::EMPTY(Value::none), State::FULL(Value::all);
+
+/**
+ * Get a memory value.
+ * @param addr	Memory address (must be a constant).
+ * @return		Memory value.
+*/
+const Value& State::load(const Value& addr) const {
+	Node * cur;
+	ASSERTP(addr.isConst(), "addr = " << addr << " is not a constant of the kind " << addr.kind());
+	for(cur = first.next; cur && cur->addr < uintn_t(addr.lower()); cur = cur->next)
+		;
+	if(cur && cur->addr == uintn_t(addr.lower()))
+		return cur->val;
+	else
+		return first.val;
+}
 	
-	
-}} // otawa::clp
+} } // otawa::clp

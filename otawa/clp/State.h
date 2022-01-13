@@ -24,6 +24,8 @@
 #define OTAWA_CLP_STATE_H_
 
 #include <elm/data/Vector.h>
+#include <elm/data/List.h>
+#include <elm/util/BitVector.h>
 #include <otawa/ai/Domain.h>
 #include "Value.h"
 
@@ -36,9 +38,6 @@ namespace hard {
 
 namespace clp {
 
-//#define OTAWA_CLP_CHECK(c)
-#define OTAWA_CLP_CHECK(c)	c
-	
 /**
  * The abstract state of the computer (abstract domain). The abstract state
  * is a list of register states and memory states.
@@ -66,58 +65,56 @@ public:
 	};
 	
 	/** Constructors of a new State	*/
-	State(const Value& def = Value::all);
+	State(int base, const Value& def = Value::all);
 	State(const State& state);
 	~State(void);
-	
+
+	inline bool isNone() const { return first.val.isNone(); }
 	inline State& operator=(const State& state){copy(state); return *this; }
-	inline bool operator==(const State& state) const {
-		return equals(state);
-	}
+	inline bool operator==(const State& state) const { return equals(state); }
 	
 	void copy(const State& state);
 	void clear(void);
-	void set(const Value& addr, const Value& val);
+	void setReg(int r, const Value& x);
+	void store(const Value& addr, const Value& val);
 	void clear(t::uint32 base, t::uint32 size);
 	bool equals(const State& state) const;
 	void join(const State& state);
 	void widening(const State& state, int loopBound);
 	void print(io::Output& out, const hard::Platform *pf = nullptr) const;
 	void print(io::StructuredOutput& out, const hard::Platform *pf = nullptr) const;
-	const Value& get(const Value& addr) const;
+	const Value& load(const Value& addr) const;
+	const Value& getReg(int r) const;
 	void augment(const State& state);
 	bool subsetOf(const State& s) const;
 	
-	static State EMPTY, FULL;
-
 	class Iter: public PreIterator<Iter, const Value&> {
 	public:
-		inline Iter(const State& s): state(s), i(0), node(state.first.getNext()) { }
-		inline Iter(const Iter& iter): state(iter.state), i(iter.i), node(iter.node) { }
+		inline Iter(const State& s): state(s), i(s.base), node(state.first.getNext()) { }
 		inline const Value& item(void) const
-			{ if(isReg()) return state.registers[i]; else return node->getValue(); }
+			{ if(isReg()) return state.regs[i]; else return node->getValue(); }
 		inline void next(void) { if(isReg()) i++; else node = node->getNext(); }
 		inline bool ended(void) const { return !isReg() && !node; }
-		inline Value id(void) const { if(isReg()) return Value(REG, i); else return Value(VAL, node->getAddress()); }
-
+		inline Value id(void) const { if(isReg()) return Value(REG, i - state.base); else return Value(VAL, node->getAddress()); }
 	private:
-		inline bool isReg(void) const { return i < state.registers.count(); }
+		inline bool isReg(void) const { return i < state.regs.count(); }
 		const State& state;
 		int i;
 		Node *node;
 	};
 
-	OTAWA_CLP_CHECK(
-		inline void lock() {locked = true; }
-		inline void unlock() { locked = false; }
-	)
 protected:
-	Node first;
-	Vector<Value> registers;
-	Vector<Value> tmpreg;
-	OTAWA_CLP_CHECK(bool locked;)
-};
 	
+	void repairSR(int r);
+	void rebuildSR();
+	
+	int base;
+	Node first;
+	Vector<Value> regs;
+	List<int> srs;
+	BitVector linked;
+};
+
 } }	// otawa::clp
 
 #endif /* OTAWA_DATA_CLP_STATE_H_ */

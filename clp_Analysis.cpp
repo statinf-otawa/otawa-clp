@@ -19,6 +19,7 @@
  *	Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+#include <elm/alloc/ListGC.h>
 #include <elm/json/Saver.h>
 #include <otawa/clp/features.h>
 #include <otawa/clp/State.h>
@@ -115,7 +116,7 @@ Manager::~Manager() { }
  * * @ref otawa::pred::FILTER_FEATURE
  * 
  */
-class Analysis: public BBProcessor, public Manager {
+class Analysis: public BBProcessor, public Manager, public GCManager {
 public:
 
 	static p::declare reg;
@@ -123,7 +124,8 @@ public:
 	Analysis(p::declare& r = reg):
 		BBProcessor(reg),
 		trace(false),
-		filter(nullptr)
+		filter(nullptr),
+		gc(*this)
 		{ }
 	
 	
@@ -181,15 +183,26 @@ public:
 	}
 	
 	const Value& valueOf(ObservedState *state, int reg) override {
-		return state->state->get(Value::R(reg));
+		return state->state->getReg(reg);
 	}
 
 	const Value& valueOf(ObservedState *state, hard::Register *reg) override {
-		return state->state->get(Value::R(reg->platformNumber()));
+		return state->state->getReg(reg->platformNumber());
 	}
 	
 	const Value& valueOf(ObservedState *state, const Value& addr) override {
-		return state->state->get(addr);
+		return state->state->load(addr);
+	}
+
+	///
+	void collect(AbstractGC& gc) override {
+		domain->collect(gc);
+		ana->collect([&gc](ai::State *s){ gc.mark(s, sizeof(State)); });
+	}
+
+	///
+	void clean(void *p) override {
+		static_cast<State *>(p)->~State();
 	}
 
 protected:
@@ -202,7 +215,13 @@ protected:
 	
 	///
 	void setup(WorkSpace *ws) override {
-		domain = new Domain(ws->process());
+
+		// Is there a filter maker?
+		if(ws->provides(pred::FILTER_FEATURE))
+			filter = pred::FILTER_FEATURE.get(ws);
+
+		// buidl the domain
+		domain = new Domain(ws->process(), filter, gc);
 		
 		// get hardware information
 		mem = hard::MEMORY_FEATURE.get(ws);
@@ -229,7 +248,7 @@ protected:
 		if(!sp)
 			warn("no stack pointer in the architecture.");
 		else {
-			Value v = static_cast<State *>(domain->entry())->get(Value(REG, sp->platformNumber()));
+			Value v = static_cast<State *>(domain->entry())->getReg(sp->platformNumber());
 			if(v.isTop()) {
 				bool found = false;
 				if(mem) {
@@ -256,10 +275,6 @@ protected:
 			}
 		}
 		
-		// Is there a filter maker?
-		if(ws->provides(pred::FILTER_FEATURE))
-			filter = pred::FILTER_FEATURE.get(ws);
-	
 	}
 
 	void destroy(WorkSpace *ws) override {
@@ -272,6 +287,12 @@ protected:
 	}
 	
 	void dumpBB(Block *v, io::Output& out) override {
+		out << "\t\tbefore:";
+		auto s = ana->before(v);
+		domain->print(s, out);
+		ana->release(s);
+		out << io::endl;
+		out << "\t\tafter:";
 		domain->print(ana->after(v), out);
 		out << io::endl;
 	}
@@ -295,6 +316,9 @@ protected:
 		
 		// perform the analysis
 		ana->process();
+	
+		// clean memory
+		gc.runGC();
 		
 		// display store-to-T
 		auto& stt = domain->topStores();
@@ -314,7 +338,8 @@ private:
 	ai::CFGAnalyzer *ana;
 	bool trace;
 	List<ObservedState *> ostates;
-	pred::FilterMaker *filter;
+	pred::FilterInfo *filter;
+	ListGC gc;
 };
 
 ///

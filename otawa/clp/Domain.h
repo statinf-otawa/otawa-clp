@@ -22,17 +22,20 @@
 #ifndef OTAWA_CLP_DOMAIN_H
 #define OTAWA_CLP_DOMAIN_H
 
+#include <elm/avl/Map.h>
+#include <elm/alloc/ListGC.h>
 #include <otawa/ai/Domain.h>
 #include <otawa/clp/State.h>
 #include <otawa/dfa/State.h>
+#include <otawa/pred/predicates.h>
 #include <otawa/flowfact/features.h>
-#include <elm/avl/Map.h>
 
 namespace otawa { namespace clp {
 
 class ContextStack;
 	
 class Domain: public ai::Domain {
+	int _max;
 public:
 
 	typedef enum {
@@ -41,7 +44,7 @@ public:
 		TAKEN
 	} branch_t;
 
-	Domain(Process *proc);
+	Domain(Process *proc, pred::FilterInfo *f, ListGC& gc);
 	~Domain();
 
 	// initialization
@@ -70,16 +73,18 @@ public:
 	State *update(Inst *inst, int sem, State *s, branch_t select = BOTH);
 
 	const Vector<Inst *> topStores() const { return store_to_T; }
+
+	void collect(AbstractGC& gc);
 	
 private:
 	
 	void set(clp::State& state, int i, const clp::Value& v);
-	void update(branch_t select, bool filter);
+	void update(const sem::Block& b, branch_t select);
 	void doLoad(State& s, const sem::inst& i);
 	void doStore(State& s, const sem::inst& i);
 	void doAssume(State& s, const sem::inst& i);
 	
-	sem::Block b;
+	sem::Block buf;
 	Inst *currentInst;
 
 	/* attribute for specific analysis / packing */
@@ -87,10 +92,12 @@ private:
 	Process *_process;
 	dfa::State *istate;
 	clp::Value currentAccessAddress;
-	State *cs, *fs, *init;
+	State *cs, *fs, *init, *ts, *tops, *bots;
 	ContextStack *stack;
 	avl::Map<Block *, State *> loop_states;
 	Vector<Inst *> store_to_T;
+	pred::FilterInfo *filter;
+	ListGC& gc;
 };
 
 } } 	// otawa::clp

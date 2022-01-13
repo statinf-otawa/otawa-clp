@@ -99,14 +99,14 @@ private:
  * precision based on BB predicate building.
  * @ingroup pred
  */
-class FilterMaker {
+class FilterInfo {
 public:
 	virtual const otawa::sem::Block& takenFilter(otawa::Block *v) = 0;
 	virtual const sem::Block& notTakenFilter(otawa::Block *v) = 0;
 	virtual int maxTemp() = 0;
 };
 
-extern p::interfaced_feature<FilterMaker> FILTER_FEATURE;
+extern p::interfaced_feature<FilterInfo> FILTER_FEATURE;
 
 
 } }	// elm::sem

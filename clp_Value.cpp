@@ -469,7 +469,9 @@ void Value::print(io::Output& out) const {
 	else if (_kind == NONE)
 		out << '_';
 	else if(_kind == CMP)
-		out << "r" << _base << " ~ r" << _delta;
+		out << (_base < 0 ? 't' : 'r') << ::abs(_base)
+			<< " ~ "
+			<< (_delta < 0 ? 't' : 'r') << ::abs(_delta);
 	else if ((_delta == 0) && (_mtimes ==  0))
 		out << "k(0x" << io::hex(_base) << ')';
 		//out << "k(" << _lower << ')';
@@ -635,12 +637,12 @@ void Value::_or(const Value& val) {
 Value& Value::join(const Value& val) {
 	if((*this) == val)							/* A U A = A (nothing to do) */
 		return *this;
-	else if (_kind != VAL || val._kind != VAL)  /* ALL U anything = ALL */
-		set(ALL, 0, 1, UMAXn);
 	else if (_kind == NONE)						/* NONE U A = A */
 		set(VAL, val._base, val._delta, val._mtimes);
 	else if (val._kind == NONE)					/* A U NONE = A (nothing to do) */
 		return *this;
+	else if (_kind != VAL || val._kind != VAL)  /* ALL U anything = ALL */
+		set(ALL, 0, 1, UMAXn);
 	else if(isConst() && val.isConst()) {/* k1 U k2 */
 		if(val._base > _base)
 			set(VAL, _base, val._base - _base, 1);

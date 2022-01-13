@@ -50,6 +50,8 @@ public:
 		c = s.top().cs;
 		s.pop();
 	}
+	inline void collect(AbstractGC& gc)
+		{ for(auto& c: s) gc.mark(c.cs, sizeof(State)); }
 private:
 	Vector<context_t> s;
 };
@@ -61,7 +63,7 @@ private:
  * @param i		Register number.
  */
 inline const Value& get(const State& state, int i) {
-	return state.get(Value(REG, i));
+	return state.getReg(i);
 }
 
 
@@ -73,13 +75,14 @@ inline const Value& get(const State& state, int i) {
  * @return the new state
  */
 inline const void set(clp::State& state, int i, const Value& v) {
-	state.set(Value(clp::REG, i), v);
+	state.setReg(i, v);
 }
 
 
 
 ///
-Domain::Domain(Process *proc):
+Domain::Domain(Process *proc, pred::FilterInfo *f, ListGC& gc_):
+	_max(max(proc->maxTemp(), f == nullptr ? 0 : f->maxTemp())),
 	currentInst(0),
 	bBuildFilters(false),
 	_process(proc),
@@ -87,22 +90,40 @@ Domain::Domain(Process *proc):
 	currentAccessAddress(0),
 	cs(nullptr),
 	fs(nullptr),
-	init(new State()),
-	stack(new ContextStack())
+	init(new(gc_.alloc<State>()) State(_max)),
+	ts(nullptr),
+	tops(new(gc_.alloc<State>()) State(_max, Value::none)),
+	bots(new(gc_.alloc<State>()) State(_max, Value::none)),
+	stack(new ContextStack()),
+	filter(f),
+	gc(gc_)
 {
-	proc->semInit(b);
+	proc->semInit(buf);
 	cs = init;
-	update(BOTH, false);
-	OTAWA_CLP_CHECK(
-		State::EMPTY.lock();
-		State::FULL.lock();
-	)
+	update(buf, BOTH);
 }
 
 
 ///
 Domain::~Domain() {
 	delete stack;
+}
+
+
+/**
+ * Called to collect living states in the GC.
+ * @param gc	GC to work with.
+ */
+void Domain::collect(AbstractGC& gc) {
+	gc.mark(cs, sizeof(State));
+	gc.mark(fs, sizeof(State));
+	gc.mark(init, sizeof(State));
+	gc.mark(ts, sizeof(State));
+	gc.mark(tops, sizeof(State));
+	gc.mark(bots, sizeof(State));
+	stack->collect(gc);
+	for(auto s: loop_states)
+		gc.mark(s, sizeof(State));
 }
 
 
@@ -132,7 +153,7 @@ void Domain::initialize(const hard::Register *reg, const dfa::Value val) {
  */
 void Domain::initialize(Address addr, const dfa::Value val) {
 	Value v(VAL, val.base(), val.delta(), val.count());
-	init->set(Value(VAL, addr.offset()), v);
+	init->store(Value(VAL, addr.offset()), v);
 }
 
 
@@ -144,20 +165,19 @@ void Domain::initialize(Address addr, const dfa::Value val) {
  * @return the new state
  */
 void Domain::set(clp::State& state, int i, const clp::Value& v) {
-	clp::Value addr(clp::REG, i);
-	return state.set(addr, v);
+	return state.setReg(i, v);
 }
 
 
 ///
 ai::State *Domain::bot() {
-	return &State::EMPTY;
+	return bots;
 }
 
 
 ///
 ai::State *Domain::top() {
-	return &State::FULL;
+	return tops;
 }
 
 
@@ -179,30 +199,19 @@ bool Domain::equals(ai::State *_s1, ai::State *_s2) {
 ai::State *Domain::join(ai::State *_s1, ai::State *_s2) {
 	auto s1 = static_cast<State *>(_s1);
 	auto s2 = static_cast<State *>(_s2);
-	State *res;
-	if(s1 == &State::FULL || s2 == &State::FULL)
-		res = &State::FULL;
-	else if(s1 == &State::EMPTY)
-		res = s2;
-	else if(s2 == &State::EMPTY)
-		res = s1;
+	if(s1 == tops || s2 == tops)
+		ts = tops;
+	else if(s1 == bots)
+		ts = s2;
+	else if(s2 == bots)
+		ts = s1;
 	else if(s1 == s2)
-		res = s1;
+		ts = s1;
 	else {
-		res = new State(*s1);
-		res->join(*s2);
-		res->lock();
+		ts = new(gc.alloc<State>()) State(*s1);
+		ts->join(*s2);
 	}
-	
-	CLP_CHECK(
-		/*cerr << "s1        = "; s1->print(cerr); cerr << io::endl;
-		cerr << "s2        = "; s2->print(cerr); cerr << io::endl;
-		cerr << "J(s1, s2) = "; res->print(cerr); cerr << io::endl;
-		cerr << io::endl;*/
-		ASSERT(s1->subsetOf(*res));
-		ASSERT(s2->subsetOf(*res));
-	)
-	return res;
+	return ts;
 }
 
 
@@ -232,9 +241,9 @@ void Domain::printCode(Block *v, io::Output& out) {
 	sem::Printer p( _process->platform());
 	for(auto i: *v->toBasic()) {
 		out << i->address() << ' ' << i << io::endl;
-		b.clear();
-		i->semInsts(b);
-		for(auto s: b) {
+		buf.clear();
+		i->semInsts(buf);
+		for(auto s: buf) {
 			out << '\t';
 			p.print(out, s);
 			out << io::endl;
@@ -274,7 +283,7 @@ void Domain::doLoad(State& state, const sem::inst& i) {
 	// reading in normal memory
 	else if(istate == nullptr || !istate->isReadOnly(Address(addrclp.start())))
 		for(unsigned int m = 0; m <= addrclp.mtimes(); m++)
-			val.join(state.get(Value(VAL, addrclp.lower() + addrclp.delta() * m)));
+			val.join(state.load(Value(VAL, addrclp.lower() + addrclp.delta() * m)));
 	
 	// reading from constant memory
 	else {
@@ -325,9 +334,9 @@ void Domain::doStore(State& state, const sem::inst& i) {
 	if(addrclp == Value::all) {
 		Pair<Address, Address> accessRange = otawa::ACCESS_RANGE(currentInst);
 		if(accessRange.fst != Address::null && accessRange.snd != Address::null)
-			state.set(Value(VAL, accessRange.fst.offset(), 1, accessRange.snd.offset() -accessRange.fst.offset()), get(state, i.d()));
+			state.store(Value(VAL, accessRange.fst.offset(), 1, accessRange.snd.offset() -accessRange.fst.offset()), get(state, i.d()));
 		else {
-			state.set(addrclp, get(state, i.d()));
+			state.store(addrclp, get(state, i.d()));
 			if(!store_to_T.contains(currentInst))
 				store_to_T.add(currentInst);
 		}
@@ -336,14 +345,14 @@ void Domain::doStore(State& state, const sem::inst& i) {
 	// normal store
 	else if(addrclp.mtimes() < MEMORY_ACCESS_THRESHOLD) {
 		if(addrclp.mtimes() == 0)
-			state.set(Value(addrclp.lower()), get(state, i.d()));
+			state.store(Value(addrclp.lower()), get(state, i.d()));
 		else {
 			Value x = get(state, i.d());
 			for(unsigned int m = 0; m <= addrclp.mtimes(); m++) {
 				auto addr = Value(VAL, addrclp.lower() + addrclp.delta() * m);
-				auto val = state.get(addr); 
+				auto val = state.load(addr); 
 				val.join(x);
-				state.set(addr, val);
+				state.store(addr, val);
 			}
 		}
 	}
@@ -368,13 +377,13 @@ void Domain::doStore(State& state, const sem::inst& i) {
 
 /**
  * Update the current state with the given sequence of semantic instruction.
+ * @param b			Semantic instruction buffer to execute.
  * @param select	Select which kind of path to look for.
- * @param filter	Filtering mode (supports comparison with temporary).
  */
-void Domain::update(branch_t select, bool filter) {
-	if(cs == &State::EMPTY)
+void Domain::update(const sem::Block& b, branch_t select) {
+	if(cs == bots)
 		return;
-	fs = &State::EMPTY;
+	fs = cs;
 	bool branch = false;
 	
 	// run on the instructions
@@ -384,15 +393,11 @@ void Domain::update(branch_t select, bool filter) {
 		if(pc >= b.length() || b[pc].op == sem::CONT) {
 			if((branch && (select == BOTH || select == TAKEN))
 			|| (!branch && (select == BOTH || select == NOT_TAKEN))) {
-				if(fs == &State::EMPTY)
-					fs = cs;
-				else {
+				if(fs != cs) {
 					fs->join(*cs);
-					delete cs;
-				}		
+					delete cs;		// intermediate state not managed by GC
+				}
 			}
-			else
-				delete cs;
 			if(stack->isEmpty())
 				break;
 			else
@@ -413,17 +418,11 @@ void Domain::update(branch_t select, bool filter) {
 			break;
 
 		case sem::CMP:
-			if(filter && (i.a() >= 0 && i.b() >= 0))
-				set(*cs, i.d(), Value::compare(i.a(), i.b()));
-			else
-				set(*cs, i.d(), Value::top);
+			set(*cs, i.d(), Value::compare(i.a(), i.b()));
 			break;
 			
 		case sem::CMPU:
-			if(filter && (i.a() >= 0 && i.b() >= 0))
-				set(*cs, i.d(), Value::compare(i.a(), i.b(), true));
-			else
-				set(*cs, i.d(), Value::top);
+			set(*cs, i.d(), Value::compare(i.a(), i.b(), true));
 			break;
 
 		case sem::ASSUME:
@@ -431,14 +430,14 @@ void Domain::update(branch_t select, bool filter) {
 			break;
 		
 		case sem::FORK:
-			stack->push(pc + i.jump(), branch, new State(*cs));
+			ts = new State(*cs);	// intermediate state not managed by GC
+			stack->push(pc + i.jump(), branch, ts);
 			break;
 			
-		case sem::IF: {
-				auto ns = new State(*cs);
-				doAssume(*ns, sem::assume(sem::invert(i.cond()), i.sr()));
-				stack->push(pc + i.jump(), branch, ns);
-			}
+		case sem::IF:
+			ts = new State(*cs);	// intermediate state not managed by GC
+			doAssume(*ts, sem::assume(sem::invert(i.cond()), i.sr()));
+			stack->push(pc + i.jump(), branch, ts);
 			doAssume(*cs, sem::assume(i.cond(), i.sr()));
 			break;
 
@@ -579,50 +578,62 @@ void Domain::doAssume(State& s, const sem::inst& i) {
 
 ///
 ai::State *Domain::update(Edge *e, ai::State *_s) {
-	return _s;
+	if(filter == nullptr || _s == bots)
+		return _s;
+	cs = new(gc.alloc<State>()) State(*static_cast<State *>(_s));
+	//cs = static_cast<State *>(_s);
+	const sem::Block *b;
+	if(e->isNotTaken())
+		b = &filter->notTakenFilter(e->source());
+	else
+		b = &filter->takenFilter(e->source());
+	//cerr << "\nDEBUG: " << e << io::endl;
+	//b->print(cerr);
+	//cerr << "DEBUG: before: "; cs->print(cerr); cerr << io::endl;
+	this->update(*b, BOTH);
+	//cerr << "DEBUG: after: "; cs->print(cerr); cerr << io::endl;
+	return cs;
 }
 
 ///
 ai::State *Domain::update(Block *v, ai::State *_s) {
 	if(!v->isBasic())
 		return _s;
-	if(_s == &State::EMPTY)
+	if(_s == bots)
 		return _s;
-	cs = new State(*static_cast<State *>(_s));
+	cs = new(gc.alloc<State>()) State(*static_cast<State *>(_s));
 	auto bb = v->toBasic();
 
 	// for loop header apply widening
+	//cerr << "\nDEBUG: " << bb << io::endl;
+	//cerr << "DEBUG: before: "; cs->print(cerr); cerr << io::endl;
 	if(LOOP_HEADER(bb)) {
-		State *ps = loop_states.get(bb, nullptr);
-		if(ps == nullptr) {
-			ps = new State(*cs);
-			OTAWA_CLP_CHECK(ps->lock();)
-			loop_states.put(bb, ps);
+		ts = loop_states.get(bb, nullptr);
+		if(ts == nullptr) {
+			ts = new(gc.alloc<State>()) State(*cs);
+			loop_states.put(bb, ts);
 		}
 		else {
-			CLP_CHECK(State *ops = new State(*ps));
-			OTAWA_CLP_CHECK(ps->unlock();)
-			ps->widening(*cs, MAX_ITERATION(v));
-			OTAWA_CLP_CHECK(ps->lock();)
-			CLP_CHECK(
-				ASSERT(cs->subsetOf(*ps));
-				ASSERT(ops->subsetOf(*ps));
-				delete ops;
-			)
-			cs->copy(*ps);
+			CLP_CHECK(fs = new State(*ts));
+			ts->widening(*cs, MAX_ITERATION(v));
+			CLP_CHECK(ASSERT(cs->subsetOf(*ts)));
+			CLP_CHECK(ASSERT(fs->subsetOf(*ts)));
+			CLP_CHECK(delete fs);
+			cs->copy(*ts);
+			//cerr << "DEBUG: widening: "; cs->print(cerr); cerr << io::endl;
 		}
 	}
 	
 	// traverse all bundles
 	for(auto bu: bb->bundles()) {
-		b.clear();
-		bu.semInsts(b);
+		buf.clear();
+		bu.semInsts(buf);
 		currentInst = bu.first();
-		update(BOTH, false);
-		if(cs == &State::EMPTY)
+		update(buf, BOTH);
+		if(cs == bots)
 			break;
 	}
-	OTAWA_CLP_CHECK(cs->unlock();)
+	//cerr << "DEBUG: after: "; cs->print(cerr); cerr << io::endl;
 	return cs;
 }
 
@@ -635,10 +646,10 @@ ai::State *Domain::update(Block *v, ai::State *_s) {
  */
 State *Domain::update(const BaseBundle<BasicBlock::InstIter>& bu, State *s, branch_t select) {
 	cs = s;
-	b.clear();
-	bu.semInsts(b);
+	buf.clear();
+	bu.semInsts(buf);
 	currentInst = bu.first();
-	update(BOTH, false);
+	update(buf, BOTH);
 	return cs;
 }
 
@@ -653,13 +664,13 @@ State *Domain::update(const BaseBundle<BasicBlock::InstIter>& bu, State *s, bran
  */
 State *Domain::update(Inst *inst, int sem, State *s, branch_t select) {
 	cs = s;
-	b.clear();
-	inst->semInsts(b);
+	buf.clear();
+	inst->semInsts(buf);
 	currentInst = inst;
-	b[sem] = sem::cont();
-	b.setLength(sem + 1);
-	update(BOTH, false);
+	buf[sem] = sem::cont();
+	buf.setLength(sem + 1);
+	update(buf, BOTH);
 	return cs;	
 }
 
-}} 	// otawa::clp
+} } 	// otawa::clp
