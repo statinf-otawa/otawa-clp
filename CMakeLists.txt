@@ -70,4 +70,5 @@ endif()
 # installation
 install(TARGETS	"${PLUGIN}"		LIBRARY DESTINATION "${OTAWA_PLUGDIR}/${NAMESPACE}")
 install(FILES	"${PLUGIN}.eld"			DESTINATION "${OTAWA_PLUGDIR}/${NAMESPACE}")
+install(DIRECTORY "otawa"				DESTINATION "${OTAWA_PREFIX}/include")
 
