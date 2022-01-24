@@ -606,7 +606,7 @@ void State::print(io::StructuredOutput& out, const hard::Platform *pf) const {
  */
 const Value& State::getReg(int r) const {
 	int i = r + base;
-	if(i > regs.length())
+	if(i >= regs.length())
 		return Value::all;
 	else
 		return regs[i];
