@@ -469,9 +469,9 @@ void Value::print(io::Output& out) const {
 	else if (_kind == NONE)
 		out << '_';
 	else if(_kind == CMP)
-		out << (_base < 0 ? 't' : 'r') << ::abs(_base)
+		out << (_base < 0 ? 't' : 'r') << elm::abs(_base)
 			<< " ~ "
-			<< (_delta < 0 ? 't' : 'r') << ::abs(_delta);
+			<< (_delta < 0 ? 't' : 'r') << elm::abs(_delta);
 	else if ((_delta == 0) && (_mtimes ==  0))
 		out << "k(0x" << io::hex(_base) << ')';
 		//out << "k(" << _lower << ')';
