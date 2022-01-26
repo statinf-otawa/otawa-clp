@@ -393,11 +393,13 @@ void Domain::update(const sem::Block& b, branch_t select) {
 		if(pc >= b.length() || b[pc].op == sem::CONT) {
 			if((branch && (select == BOTH || select == TAKEN))
 			|| (!branch && (select == BOTH || select == NOT_TAKEN))) {
-				if(fs != cs) {
+				if(fs != cs)
 					fs->join(*cs);
-					delete cs;		// intermediate state not managed by GC
-				}
 			}
+			else if(fs == cs)
+				fs->copy(*bots);
+			if(fs != cs)
+				delete cs;	// intermediate state not managed by GC
 			if(stack->isEmpty())
 				break;
 			else
@@ -528,6 +530,10 @@ void Domain::update(const sem::Block& b, branch_t select) {
 			set(*cs, i.d(), Value::all);
 			break;
 		}
+		
+		// reduce to _|_?
+		if(cs->isNone())
+			pc = b.length();
 	}
 
 	cs = fs;

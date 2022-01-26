@@ -151,8 +151,11 @@ void State::rebuildSR() {
  * @param x		Assigned value.
  */
 void State::setReg(int r, const Value& x) {
-	if(first.val == Value::none)
+	if(first.val == Value::none) {
+		first.val = Value::bot;
+		clear();
 		return;
+	}
 	int i = r + base;
 	
 	// enlarge if required
@@ -189,8 +192,11 @@ void State::setReg(int r, const Value& x) {
  */
 void State::store(const Value& a, const Value& x) {
 	Node *prev, *cur, *next;
-	if(first.val == Value::none)
+	if(first.val == Value::none) {
+		first.val = Value::bot;
+		clear();
 		return;
+	}
 
 	// insert a none in the state (put the state to none)
 	if(x.isNone()){
