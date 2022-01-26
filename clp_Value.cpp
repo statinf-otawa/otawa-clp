@@ -781,7 +781,7 @@ Value& Value::widening(const Value& x) {
  * @param x the value of the next iteration state
  * @param N the maximum number of iteration of the loop
 */
-Value& Value::ffwidening(const Value& x, int N){
+Value& Value::ffwidening(const Value& x, int N) {
 	
 	// 	(0)	⊥ ▽ x = x ▽ ⊥ = x
 	if(kind() == NONE)
@@ -805,7 +805,7 @@ Value& Value::ffwidening(const Value& x, int N){
 	else if(N >= 0 && mtimes() == uintn_t(N) && x.mtimes() == uintn_t(N) + 1 && delta() == x.delta())
 		return *this;
 
-	// (3) (b, δ, n) ▽ (b', δ', n') =	(b, δ", ∞)
+	// (3) (b, δ, n) ▽ (b', δ', n') = (b, δ", ∞)
 	// with δ" = gcd(δ, δ', b' - b) ∧ δ ≥ 0 ∧ δ' ≥ 0 ∧ b' - b ≥ 0
 	else if(delta() >= 0 && x.delta() >= 0 && (x.base() - base()) >= 0) {
 		auto delta_s = ugcd(ugcd(delta(), x.delta()), x.base() - base());
@@ -1099,6 +1099,8 @@ Value& Value::ge(const Value& x) {
 		*this = bot;
 		return *this;
 	}
+	else if(isBot())
+		return *this;
 	
 	// non-value or signed wrapping
 	if(!x.isValue() || x.swrap())
@@ -1121,6 +1123,8 @@ Value& Value::gt(const Value& x) {
 		*this = bot;
 		return *this;
 	}
+	else if(isBot())
+		return *this;
 	
 	// non-value or signed wrapping
 	if(!x.isValue() || x.swrap())
@@ -1238,6 +1242,8 @@ Value& Value::le(const Value& x) {
 		*this = bot;
 		return *this;
 	}
+	else if(isBot())
+		return *this;
 	
 	// non-value or signed wrapping
 	if(!x.isValue() || x.swrap())
@@ -1260,6 +1266,8 @@ Value& Value::lt(const Value& x) {
 		*this = bot;
 		return *this;
 	}
+	else if(isBot())
+		return *this;
 	
 	// non-value or signed wrapping
 	if(!x.isValue() || x.swrap())

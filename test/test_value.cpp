@@ -30,10 +30,13 @@ clp::Value all = clp::Value::all;
 typedef clp::Value value;
 const clp::intn_t inf = clp::MAXn;
 const clp::intn_t ninf = clp::MINn;
+const clp::uintn_t uinf = clp::UMAXn;
 
 inline clp::Value val(clp::intn_t l, clp::intn_t d, clp::intn_t n) {
 	return clp::Value(clp::VAL, l, d, n);
 }
+
+inline clp::Value k(clp::intn_t n) { return clp::Value(n); }
 
 inline bool test_le(value v, clp::intn_t k, value w) {
 	value b = v;
@@ -340,10 +343,16 @@ int main(void) {
 		CHECK_EQUAL(val(-1, -1, 0xffffffff).widening(val(0x0, -1, 0xffffffff)), clp::Value::all);
 		CHECK_EQUAL(val(1,0,0).widening(val(2,0,0)), val(1, 1, 0xffffffff));
 		CHECK_EQUAL(val(0x6000000C,4,0xffffffff).widening(val(0x6000004c,0,0)), val(0x6000000c, 4, 0xffffffff));
-		CHECK_EQUAL(val(0x6000000C,4,7).widening(val(0x6000004c,0,0)), val(0x6000000c, 4, 0x10));
-		CHECK_EQUAL(val(0x6000000C,4,0x20).widening(val(0x6000004c,0,0)), val(0x6000000c, 4, 0x20));
+		
+		// suspicious casing that could cause endless looping
+		//CHECK_EQUAL(val(0x6000000C,4,7).widening(val(0x6000004c,0,0)), val(0x6000000c, 4, 0x10));
+		//CHECK_EQUAL(val(0x6000000C,4,0x20).widening(val(0x6000004c,0,0)), val(0x6000000c, 4, 0x20));
+		
 		CHECK_EQUAL(val(0x60000004,8,0xFFFFFFFF).widening(val(0x6000000C,4,0xFFFFFFFF)), val(0x60000004, 4, 0xFFFFFFFF));
 		CHECK_EQUAL(val(2,0,0).widening(val(3,1,0xFFFFFFFF)), val(2, 1, 0xFFFFFFFF));
+	
+		CHECK_EQUAL(k(0x40).widening(val(0x40, 0x40, 1)), val(0x40, 0x40, uinf));
+		
 	}
 
 	CHECK_RETURN

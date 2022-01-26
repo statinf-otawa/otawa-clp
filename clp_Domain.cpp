@@ -614,11 +614,21 @@ ai::State *Domain::update(Block *v, ai::State *_s) {
 			loop_states.put(bb, ts);
 		}
 		else {
-			CLP_CHECK(fs = new State(*ts));
-			ts->widening(*cs, MAX_ITERATION(v));
-			CLP_CHECK(ASSERT(cs->subsetOf(*ts)));
-			CLP_CHECK(ASSERT(fs->subsetOf(*ts)));
-			CLP_CHECK(delete fs);
+			int n = MAX_ITERATION(v);
+			if(n == 0)
+				return bots;
+			else if(n >= 0)
+				ts->widening(*cs, n);
+			else {
+				CLP_CHECK(if(n >= 0) fs = new State(*ts));
+				ts->widening(*cs, n);
+				//CLP_CHECK(cerr << "\n\n\n\nDEBUG: ts="; ts->print(cerr); cerr << io::endl);
+				//CLP_CHECK(cerr << "\nDEBUG: cs="; cs->print(cerr); cerr << io::endl);
+				//CLP_CHECK(cerr << "\nDEBUG: ts="; ts->print(cerr); cerr << io::endl);
+				CLP_CHECK(if(n >= 0) ASSERT(cs->subsetOf(*ts)));
+				CLP_CHECK(if(n >= 0) ASSERT(fs->subsetOf(*ts)));
+				CLP_CHECK(delete fs);				
+			}
 			cs->copy(*ts);
 			//cerr << "DEBUG: widening: "; cs->print(cerr); cerr << io::endl;
 		}

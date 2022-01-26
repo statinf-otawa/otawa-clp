@@ -64,7 +64,7 @@ target_link_libraries	("${PLUGIN}" "${TARGET_LIB}" "${OTAWA_LDFLAGS}")
 
 # tests
 if(WITH_TEST)
-add_subdirectory(test)
+	add_subdirectory(test)
 endif()
 
 # installation
