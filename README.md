@@ -19,6 +19,15 @@ In both cases, this plug-in is installed in the plug-in directory
 of the `otawa-config` installation.
 
 
+## Developing
+
+
+Basically, the build and install process involves the automatic documentation
+generation. To avoid this,
+
+	$ cmake . -DWITHOUT_DOC=yes
+
+
 ## Testing
 
 Basically, data for testing must be downloaded before performing tests:
