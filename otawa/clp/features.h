@@ -22,8 +22,9 @@
 #define OTAWA_CLP_FEATURES_H_
 
 #include <otawa/proc.h>
-#include <otawa/clp/Value.h>
 #include <otawa/cfg/features.h>
+
+#include "Value.h"
 
 namespace otawa {
 

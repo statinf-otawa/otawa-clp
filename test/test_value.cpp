@@ -20,7 +20,7 @@
  */
 
 #include <elm/test.h>
-#include <otawa/clp/Value.h>
+#include "../otawa/clp/Value.h"
 
 using namespace elm;
 using namespace otawa;

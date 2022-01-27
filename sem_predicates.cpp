@@ -20,7 +20,7 @@
  *	02110-1301  USA
  */
 
-#include <otawa/pred/predicates.h>
+#include "otawa/pred/predicates.h"
 
 namespace otawa { namespace pred {
 
