@@ -21,8 +21,6 @@
 
 #include <elm/alloc/ListGC.h>
 #include <elm/json/Saver.h>
-#include <otawa/clp/features.h>
-#include <otawa/clp/State.h>
 #include <otawa/cfg/features.h>
 #include <otawa/dfa/State.h>
 #include <otawa/hard/Memory.h>
@@ -30,9 +28,11 @@
 #include <otawa/ipet/features.h>
 #include <otawa/ai/CFGAnalyzer.h>
 #include <otawa/ai/FlowAwareRanking.h>
-#include <otawa/pred/predicates.h>
 
 #include "otawa/clp/Domain.h"
+#include "otawa/clp/features.h"
+#include "otawa/clp/State.h"
+#include "otawa/pred/predicates.h"
 
 namespace otawa { namespace clp {
 

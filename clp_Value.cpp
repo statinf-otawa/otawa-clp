@@ -20,7 +20,7 @@
  *	02110-1301  USA
  */
 
-#include <otawa/clp/Value.h>
+#include "otawa/clp/Value.h"
 
 namespace otawa { namespace clp {
 

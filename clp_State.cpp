@@ -20,7 +20,8 @@
  *	02110-1301  USA
  */
 
-#include <otawa/clp/State.h>
+#include "otawa/clp/State.h"
+
 #include <otawa/hard/Platform.h>
 
 namespace otawa { namespace clp {

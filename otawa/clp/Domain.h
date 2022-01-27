@@ -25,10 +25,11 @@
 #include <elm/avl/Map.h>
 #include <elm/alloc/ListGC.h>
 #include <otawa/ai/Domain.h>
-#include <otawa/clp/State.h>
 #include <otawa/dfa/State.h>
-#include <otawa/pred/predicates.h>
 #include <otawa/flowfact/features.h>
+
+#include "../pred/predicates.h"
+#include "State.h"
 
 namespace otawa { namespace clp {
 

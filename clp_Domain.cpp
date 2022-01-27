@@ -20,9 +20,10 @@
  *	02110-1301  USA
  */
 
-#include <otawa/clp/Domain.h>
 #include <otawa/prog/Symbol.h>
 #include <otawa/ipet/FlowFactLoader.h>
+
+#include "otawa/clp/Domain.h"
 
 #define CLP_CHECK(c)	c
 //#define CLP_CHECK(c)

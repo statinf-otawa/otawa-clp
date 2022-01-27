@@ -20,7 +20,8 @@
  *	02110-1301  USA
  */
 
-#include <otawa/pred/predicates.h>
+#include "otawa/pred/predicates.h"
+
 #include <elm/data/HashMap.h>
 #include <elm/data/ListMap.h>
 #include <otawa/proc/BBProcessor.h>
