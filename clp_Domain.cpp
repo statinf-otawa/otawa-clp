@@ -403,10 +403,13 @@ void Domain::update(const sem::Block& b, branch_t select) {
 				delete cs;	// intermediate state not managed by GC
 			if(stack->isEmpty())
 				break;
-			else
+			else {
 				stack->pop(pc, branch, cs);
+				if(pc >= b.length())
+					continue;
+			}
 		}
-		
+
 		// perform the instruction
 		const sem::inst& i = b[pc];
 		switch(i.op) {
