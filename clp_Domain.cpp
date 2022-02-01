@@ -634,7 +634,7 @@ ai::State *Domain::update(Block *v, ai::State *_s) {
 				//CLP_CHECK(cerr << "\nDEBUG: ts="; ts->print(cerr); cerr << io::endl);
 				CLP_CHECK(if(n >= 0) ASSERT(cs->subsetOf(*ts)));
 				CLP_CHECK(if(n >= 0) ASSERT(fs->subsetOf(*ts)));
-				CLP_CHECK(delete fs);				
+				CLP_CHECK(if(n >= 0) delete fs);				
 			}
 			cs->copy(*ts);
 			//cerr << "DEBUG: widening: "; cs->print(cerr); cerr << io::endl;
