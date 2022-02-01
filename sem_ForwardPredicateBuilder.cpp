@@ -530,6 +530,10 @@ protected:
 
 	void process(const sem::Block& block, Vector<ForwardState *>& states) {
 		Vector<Pair<t::uint32, ForwardState *> > stack;
+		cerr << "DEBUG: process\n";
+		for(auto i: block)
+			cerr << "\t" << i << io::endl;
+		
 		for(auto s: states)
 			stack.add(pair(t::uint32(0), s));
 		ForwardState *ns;
