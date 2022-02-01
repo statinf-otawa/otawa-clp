@@ -530,16 +530,14 @@ protected:
 
 	void process(const sem::Block& block, Vector<ForwardState *>& states) {
 		Vector<Pair<t::uint32, ForwardState *> > stack;
-		cerr << "DEBUG: process\n";
-		for(auto i: block)
-			cerr << "\t" << i << io::endl;
-		
 		for(auto s: states)
 			stack.add(pair(t::uint32(0), s));
 		ForwardState *ns;
 		while(!stack.isEmpty()) {
 			auto c = stack.pop();
-			for(t::uint32 pc = c.fst; block[pc].op != sem::STOP; pc++) {
+			for(int pc = c.fst;
+			pc < block.length() && block[pc].op != sem::STOP;
+			pc++) {
 				switch(block[pc].op) {
 				case sem::NOP:
 					break;
