@@ -25,8 +25,14 @@
 
 #include "otawa/clp/Domain.h"
 
-#define CLP_CHECK(c)	c
-//#define CLP_CHECK(c)
+#ifdef NDEBUG
+#	define CLP_CHECK(c)
+#	define DEBUG_CFG(c)
+#else
+#	define CLP_CHECK(c)		// c
+#	define DEBUG_CFG(c)		// c
+#endif
+
 
 namespace otawa { namespace clp {
 
@@ -607,23 +613,23 @@ ai::State *Domain::update(Edge *e, ai::State *_s) {
 
 ///
 ai::State *Domain::update(Block *v, ai::State *_s) {
-	if(!v->isBasic())
+	if(v->isEntry() || v->isExit())
 		return _s;
 	if(_s == bots)
 		return _s;
 	cs = new(gc.alloc<State>()) State(*static_cast<State *>(_s));
-	auto bb = v->toBasic();
+	//auto bb = v->toBasic();
 
 	// for loop header apply widening
-	//cerr << "\nDEBUG: " << bb << io::endl;
-	//cerr << "DEBUG: before: "; cs->print(cerr); cerr << io::endl;
-	if(LOOP_HEADER(bb)) {
-		ts = loop_states.get(bb, nullptr);
+	if(LOOP_HEADER(v)) {
+		ts = loop_states.get(v, nullptr);
 		if(ts == nullptr) {
 			ts = new(gc.alloc<State>()) State(*cs);
-			loop_states.put(bb, ts);
+			loop_states.put(v, ts);
+			DEBUG_CFG(cerr << "\t\twidening with _|_: "; print(ts, cerr); cerr << io::endl);
 		}
 		else {
+			DEBUG_CFG(cerr << "\t\tbefore widening: "; print(ts, cerr); cerr << io::endl);
 			int n = MAX_ITERATION(v);
 			if(n == 0)
 				return bots;
@@ -639,20 +645,21 @@ ai::State *Domain::update(Block *v, ai::State *_s) {
 				CLP_CHECK(if(n >= 0) ASSERT(fs->subsetOf(*ts)));
 				CLP_CHECK(if(n >= 0) delete fs);				
 			}
+			DEBUG_CFG(cerr << "\t\tafter widening: "; print(ts, cerr); cerr << io::endl);
 			cs->copy(*ts);
-			//cerr << "DEBUG: widening: "; cs->print(cerr); cerr << io::endl;
 		}
 	}
-	
+
 	// traverse all bundles
-	for(auto bu: bb->bundles()) {
-		buf.clear();
-		bu.semInsts(buf);
-		currentInst = bu.first();
-		update(buf, BOTH);
-		if(cs == bots)
-			break;
-	}
+	if(v->isBasic())
+		for(auto bu: v->toBasic()->bundles()) {
+			buf.clear();
+			bu.semInsts(buf);
+			currentInst = bu.first();
+			update(buf, BOTH);
+			if(cs == bots)
+				break;
+		}
 	//cerr << "DEBUG: after: "; cs->print(cerr); cerr << io::endl;
 	return cs;
 }

@@ -262,18 +262,24 @@ bool State::equals(const State& state) const {
 
 	// check registers
 	int m = min(regs.length(), state.regs.length());
-	for(int i = 0; i < m; i++)
-		if(regs[i] != state.regs[i])
+	for(int i = base; i < m; i++)
+		if(regs[i] != state.regs[i]) {
+			//cerr << "DEBUG: cause of R" << (i - base) << io::endl;
 			return false;
+		}
 	if(regs.length() > m)
 		for(int i = m; i < regs.length(); i++) {
-			if(!regs[i].isAll())
+			if(!regs[i].isAll()) {
+				//cerr << "DEBUG: cause of R" << (i - base) << io::endl;
 				return false;
+			}
 		}
 	else if(state.regs.length() > m)
 		for(int i = m; i < state.regs.length(); i++)
-			if(!state.regs[i].isAll())
+			if(!state.regs[i].isAll()) {
+				//cerr << "DEBUG: cause of R" << (i - base) << io::endl;
 				return false;
+			}
 
 	// check memory
 	if(first.val.kind() != state.first.val.kind())
