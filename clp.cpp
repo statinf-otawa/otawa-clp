@@ -32,7 +32,9 @@ namespace otawa { namespace clp {
  * approach. Values are expressed as triples $(b, \delta, n)$ representing
  * values of the set:
  * 
- * 		$(b, \delta, n) = { b + i \times \delta ~|~ 0 \le i \le n }$
+ * \f[
+ *	(b, \delta, n) = \{ b + i \times \delta ~|~ 0 \le i \le n \}
+ * \f]
  *
  * This kind of value is specially useful to represent simple addresses and
  * array addresses (under the constraint of alignment).
@@ -48,7 +50,7 @@ namespace otawa { namespace clp {
  * 
  * CLP analysis may optionaly be benefit from other data flow analyses
  * (that must be invoked before to be effective):
- * * otawa::clp::FILTER_FEATURE -- improve condition filtering.
+ * * otawa::pred::FILTER_FEATURE -- improve condition filtering.
  * * otawa::ipet::FLOW_FACTS_FEATURE -- uses of loop bounds and accesses ranges.
  * 
  * 
