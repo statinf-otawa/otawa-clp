@@ -278,7 +278,7 @@ void Domain::printTrace(ai::State *s, io::StructuredOutput& out) {
 /**
  * Perform a load operation.
  */
-void Domain::doLoad(State& state, const sem::inst& i) {
+void Domain::load(State& state, const sem::inst& i) {
 	Value addrclp = get(state, i.a());
 	Value val = Value::bot;
 	
@@ -334,7 +334,7 @@ void Domain::doLoad(State& state, const sem::inst& i) {
 
 
 ///
-void Domain::doStore(State& state, const sem::inst& i) {
+void Domain::store(State& state, const sem::inst& i) {
 	Value addrclp = get(state, i.a());
 
 	// store at T
@@ -457,10 +457,10 @@ void Domain::update(const sem::Block& b, branch_t select) {
 			break;
 			
 		case sem::LOAD:
-			doLoad(*cs, i);
+			load(*cs, i);
 			break;
 		case sem::STORE:
-			doStore(*cs, i);
+			store(*cs, i);
 			break;
 
 		case sem::SETP:

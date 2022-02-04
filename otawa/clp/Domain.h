@@ -81,8 +81,8 @@ private:
 	
 	void set(clp::State& state, int i, const clp::Value& v);
 	void update(const sem::Block& b, branch_t select);
-	void doLoad(State& s, const sem::inst& i);
-	void doStore(State& s, const sem::inst& i);
+	void load(State& s, const sem::inst& i);
+	void store(State& s, const sem::inst& i);
 	void doAssume(State& s, const sem::inst& i);
 	
 	sem::Block buf;
