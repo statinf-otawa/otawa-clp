@@ -806,14 +806,14 @@ Value& Value::ffwidening(const Value& x, int N) {
 		return *this;
 
 	// (3) (b, δ, n) ▽ (b', δ', n') = (b, δ", ∞)
-	// with δ" = gcd(δ, δ', b' - b) ∧ δ ≥ 0 ∧ δ' ≥ 0 ∧ b' - b ≥ 0
+	// with δ" = gcd(δ, δ', b' - b) ∧ δ ≥ 0 ∧ δ' ≥ 0 ∧ b' ≥ b
 	else if(delta() >= 0 && x.delta() >= 0 && (x.base() - base()) >= 0) {
 		auto delta_s = ugcd(ugcd(delta(), x.delta()), x.base() - base());
 		*this = Value(VAL, base(), delta_s, UMAXn);
 	}
 
 	// (4) (b, δ, n) ▽ (b', δ', n') = (b, δ", ∞)
-	// with δ" = -gcd(-δ, -δ', b - b') ∧ δ ≤ 0 ∧ δ' ≤ 0 ∧ b' - b ≤ 0
+	// with δ" = -gcd(-δ, -δ', b - b') ∧ δ ≤ 0 ∧ δ' ≤ 0 ∧ b' ≤ b
 	else if(delta() <= 0 && x.delta() <= 0 && (x.base() - base()) <= 0) {
 		auto delta_s = -ugcd(-ugcd(delta(), -x.delta()), base() - x.base());
 		*this = Value(VAL, base(), delta_s, UMAXn);

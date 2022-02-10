@@ -28,6 +28,7 @@
 #include <otawa/ipet/features.h>
 #include <otawa/ai/CFGAnalyzer.h>
 #include <otawa/ai/FlowAwareRanking.h>
+#include <otawa/pcg/features.h>
 
 #include "otawa/clp/Domain.h"
 #include "otawa/clp/features.h"
@@ -351,6 +352,7 @@ p::declare Analysis::reg = p::init("otawa::clp::Analysis", Version(2, 0, 0))
 	.require(hard::MEMORY_FEATURE)
 	.require(ipet::FLOW_FACTS_FEATURE)
 	.require(ai::CFG_RANKING_FEATURE)
+	.require(RECURSIVITY_ANALYSIS)
 	.provide(clp::ANALYSIS_FEATURE);
 
 

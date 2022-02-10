@@ -22,6 +22,7 @@
 
 #include <otawa/prog/Symbol.h>
 #include <otawa/ipet/FlowFactLoader.h>
+#include <otawa/pcg/features.h>
 
 #include "otawa/clp/Domain.h"
 
@@ -594,22 +595,51 @@ void Domain::doAssume(State& s, const sem::inst& i) {
 
 ///
 ai::State *Domain::update(Edge *e, ai::State *_s) {
-	if(filter == nullptr || _s == bots)
-		return _s;
-	cs = new(gc.alloc<State>()) State(*static_cast<State *>(_s));
-	//cs = static_cast<State *>(_s);
-	const sem::Block *b;
-	if(e->isNotTaken())
-		b = &filter->notTakenFilter(e->source());
-	else
-		b = &filter->takenFilter(e->source());
-	//cerr << "\nDEBUG: " << e << io::endl;
-	//b->print(cerr);
-	//cerr << "DEBUG: before: "; cs->print(cerr); cerr << io::endl;
-	this->update(*b, BOTH);
-	//cerr << "DEBUG: after: "; cs->print(cerr); cerr << io::endl;
-	return cs;
+	
+	// call case for recursivity
+	if(e->sink()->isSynth()) {
+		if(!RECURSE_BACK(e->sink()))
+			return _s;
+
+		cs = static_cast<State *>(_s);
+		ts = loop_states.get(e->sink(), nullptr);
+		if(ts == nullptr) {
+			ts = new(gc.alloc<State>()) State(*cs);
+			loop_states.put(e->sink(), ts);
+			DEBUG_CFG(cerr << "\t\trec widening with _|_: "; print(ts, cerr); cerr << io::endl);
+		}
+		else {
+			DEBUG_CFG(cerr << "\t\tbefore rec widening: "; print(ts, cerr); cerr << io::endl);
+			CLP_CHECK(if(n >= 0) fs = new State(*ts));
+			ts->widening(*cs, -1);
+			CLP_CHECK(if(n >= 0) ASSERT(cs->subsetOf(*ts)));
+			CLP_CHECK(if(n >= 0) ASSERT(fs->subsetOf(*ts)));
+			CLP_CHECK(if(n >= 0) delete fs);				
+		}
+		DEBUG_CFG(cerr << "\t\tafter recwidening: "; print(ts, cerr); cerr << io::endl);
+		return ts;
+	}
+	
+	// other case
+	else {
+		if(filter == nullptr || _s == bots)
+			return _s;
+		cs = new(gc.alloc<State>()) State(*static_cast<State *>(_s));
+		//cs = static_cast<State *>(_s);
+		const sem::Block *b;
+		if(e->isNotTaken())
+			b = &filter->notTakenFilter(e->source());
+		else
+			b = &filter->takenFilter(e->source());
+		//cerr << "\nDEBUG: " << e << io::endl;
+		//b->print(cerr);
+		//cerr << "DEBUG: before: "; cs->print(cerr); cerr << io::endl;
+		this->update(*b, BOTH);
+		//cerr << "DEBUG: after: "; cs->print(cerr); cerr << io::endl;
+		return cs;		
+	}
 }
+
 
 ///
 ai::State *Domain::update(Block *v, ai::State *_s) {
@@ -638,9 +668,6 @@ ai::State *Domain::update(Block *v, ai::State *_s) {
 			else {
 				CLP_CHECK(if(n >= 0) fs = new State(*ts));
 				ts->widening(*cs, n);
-				//CLP_CHECK(cerr << "\n\n\n\nDEBUG: ts="; ts->print(cerr); cerr << io::endl);
-				//CLP_CHECK(cerr << "\nDEBUG: cs="; cs->print(cerr); cerr << io::endl);
-				//CLP_CHECK(cerr << "\nDEBUG: ts="; ts->print(cerr); cerr << io::endl);
 				CLP_CHECK(if(n >= 0) ASSERT(cs->subsetOf(*ts)));
 				CLP_CHECK(if(n >= 0) ASSERT(fs->subsetOf(*ts)));
 				CLP_CHECK(if(n >= 0) delete fs);				
