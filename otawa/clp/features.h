@@ -55,16 +55,13 @@ public:
 	virtual const Value& valueOf(ObservedState *state, int reg) = 0;
 	virtual const Value& valueOf(ObservedState *state, hard::Register *reg) = 0;
 	virtual const Value& valueOf(ObservedState *state, const Value& addr) = 0;
+	virtual Address stack() const = 0;
 };
 
 extern p::interfaced_feature<Manager> ANALYSIS_FEATURE;
 extern p::id<bool> TRACE;
 
 } }		// otawa::clp
-
-/*namespace elm { namespace io {
-	io::Output& operator<<(io::Output& out, const otawa::clp::State& state);
-} } // otawa::clp*/
 
 #endif /* OTAWA_CLP_FEATURES_H_ */
 

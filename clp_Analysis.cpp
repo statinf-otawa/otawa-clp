@@ -98,6 +98,12 @@ Manager::~Manager() { }
  * @return		Value at the given address.
  */
 
+/**
+ * @fn Address Manager::stack() const;
+ * Get the area used for the system stack.
+ * @return	Stack area.
+ */
+
 
 /**
  * Implements CLP analysis.
@@ -268,6 +274,7 @@ protected:
 					if(!addr.isNull()) {
 						warn(_ << "setting stack at " << addr);
 						domain->initialize(sp, addr);
+						stack_base = addr;
 						found = true;
 					}
 				}
@@ -331,7 +338,11 @@ protected:
 			warn(buf.toString());
 		}
 	}
-	
+
+	Address stack() const override {
+		return stack_base;
+	}
+
 private:
 	const hard::Memory *mem;
 	const hard::Platform *pf;
@@ -341,6 +352,7 @@ private:
 	List<ObservedState *> ostates;
 	pred::FilterInfo *filter;
 	ListGC gc;
+	Address stack_base;
 };
 
 ///
