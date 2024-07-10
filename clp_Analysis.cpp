@@ -44,13 +44,13 @@ namespace otawa { namespace clp {
  * the corresponding state. A program point is made of triple (basic block,
  * instruction, semantic instruction index). Then register values or memory
  * values can be accessed. Finally, the obtained state has to be released.
- * 
+ *
  * If several values in the same basic block and instruction has to be observed,
  * the returned state can be re-used to avoid recalculating the intermediate
  * states in the basic block.
- * 
+ *
  * **Provided by:** @ref ANALYSIS_FEATURE
- * 
+ *
  * @ingroup clp
  */
 
@@ -110,7 +110,7 @@ Manager::~Manager() { }
  *
  * **Provided Features*
  * * @ref otawa::clp::ANALYSIS_FEATURE
- * 
+ *
  * **required Features**
  * * @ref otawa::COLLECTED_CFG_FEATURE
  * * @ref otawa::LOOP_INFO_FEATURE
@@ -118,24 +118,24 @@ Manager::~Manager() { }
  * * @ref otawa::hard::MEMORY_FEATURE
  * * @ref otawa::ipet::FLOW_FACTS_FEATURE
  * * @ref otawa::ai::CFG_RANKING_FEATURE
- * 
+ *
  * ** Optional Used Feature**
  * * @ref otawa::pred::FILTER_FEATURE
- * 
+ *
  */
 class Analysis: public BBProcessor, public Manager, public GCManager {
 public:
 
 	static p::declare reg;
-	
+
 	Analysis(p::declare& r = reg):
 		BBProcessor(reg),
 		trace(false),
 		filter(nullptr),
 		gc(*this)
 		{ }
-	
-	
+
+
 	void *interfaceFor(const AbstractFeature& f) override {
 		if(f == ANALYSIS_FEATURE)
 			return static_cast<Manager *>(this);
@@ -145,13 +145,13 @@ public:
 
 	///
 	ObservedState *at(BasicBlock *bb, Inst *inst, int sem, ObservedState *s) override {
-		
+
 		// if required, create the state
 		if(s == nullptr) {
 			s = new ObservedState();
 			ostates.add(s);
 		}
-		
+
 		// get the block state
 		if(bb != s->bb) {
 			s->istate = new State(*static_cast<State *>(ana->before(bb)));
@@ -159,7 +159,7 @@ public:
 		}
 		if(!bb->isBasic())
 			return s;
-		
+
 		// get the instruction state
 		auto i = bb->toBasic()->bundles().begin();
 		if(s->inst != nullptr && s->inst->address() < inst->address())
@@ -170,7 +170,7 @@ public:
 			s->istate = domain->update(*i, s->istate);
 			i++;
 		}
-		
+
 		// go to the semantic instruction
 		if(sem == 0)
 			s->state = s->istate;
@@ -178,7 +178,7 @@ public:
 			s->state = new State(*s->istate);
 			s->state = domain->update(s->inst, sem, s->state);
 		}
-		
+
 		// get the semantic instruction state
 		return s;
 	}
@@ -188,7 +188,7 @@ public:
 		ostates.remove(s);
 		delete s;
 	}
-	
+
 	const Value& valueOf(ObservedState *state, int reg) override {
 		return state->state->getReg(reg);
 	}
@@ -196,7 +196,7 @@ public:
 	const Value& valueOf(ObservedState *state, hard::Register *reg) override {
 		return state->state->getReg(reg->platformNumber());
 	}
-	
+
 	const Value& valueOf(ObservedState *state, const Value& addr) override {
 		return state->state->load(addr);
 	}
@@ -219,9 +219,10 @@ protected:
 		BBProcessor::configure(props);
 		trace = TRACE(props);
 	}
-	
+
 	///
 	void setup(WorkSpace *ws) override {
+		BBProcessor::setup(ws);
 
 		// Is there a filter maker?
 		if(ws->provides(pred::FILTER_FEATURE))
@@ -229,11 +230,11 @@ protected:
 
 		// buidl the domain
 		domain = new Domain(ws->process(), filter, gc);
-		
+
 		// get hardware information
 		mem = hard::MEMORY_FEATURE.get(ws);
 		pf = ws->platform();
-		
+
 		// look for initial state
 		// TODO all inits should be set using semantic instructions!
 		dfa::State *istate = dfa::INITIAL_STATE(ws);
@@ -249,7 +250,7 @@ protected:
 
 			domain->setInitialState(istate);
 		}
-		
+
 		// ensure SP initialisation
 		const hard::Register *sp = ws->process()->platform()->getSP();
 		if(!sp)
@@ -282,7 +283,7 @@ protected:
 					warn("no value for the initial stack pointer");
 			}
 		}
-		
+
 	}
 
 	void destroy(WorkSpace *ws) override {
@@ -290,10 +291,10 @@ protected:
 			delete ana;
 		delete domain;
 	}
-	
+
 	void processBB(WorkSpace *ws, CFG *g, Block *b) override {
 	}
-	
+
 	void dumpBB(Block *v, io::Output& out) override {
 		out << "\t\tbefore:";
 		auto s = ana->before(v);
@@ -304,10 +305,10 @@ protected:
 		domain->print(ana->after(v), out);
 		out << io::endl;
 	}
-	
+
 	void processAll(WorkSpace *ws) override {
 		ana = new ai::CFGAnalyzer(*this, *domain);
-		
+
 		// if required, prepare trace
 		UniquePtr<io::OutStream> str;
 		UniquePtr<json::Saver> out;
@@ -321,13 +322,13 @@ protected:
 				log << "ERROR: cannot trace in clp-trace.json: " << e.message() << io::endl;
 			}
 		}
-		
+
 		// perform the analysis
 		ana->process();
-	
+
 		// clean memory
 		gc.runGC();
-		
+
 		// display store-to-T
 		auto& stt = domain->topStores();
 		if(!stt.isEmpty()) {
